@@ -35,7 +35,7 @@ section[data-testid="stSidebar"] { display: none; }
     background: #0a0a0a;
     border-bottom: 1px solid #1a1a1a;
     padding: 0 16px;
-    height: 36px;
+    height: 32px;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -52,26 +52,12 @@ section[data-testid="stSidebar"] { display: none; }
 }
 .bbg-clock {
     font-family: 'IBM Plex Mono', monospace;
-    font-size: 11px;
+    font-size: 10px;
     color: #555;
     letter-spacing: 0.05em;
 }
 
 /* ── Tab Bar ── */
-.bbg-tabbar {
-    background: #0d0d0d;
-    border-bottom: 1px solid #1a1a1a;
-    display: flex;
-    align-items: stretch;
-    gap: 0;
-    padding: 0 8px;
-    height: 32px;
-    overflow-x: auto;
-    scrollbar-width: none;
-}
-.bbg-tabbar::-webkit-scrollbar { display: none; }
-
-/* Streamlit tab overrides */
 [data-testid="stTabs"] { margin: 0; padding: 0; }
 [data-testid="stTabBar"] {
     background: #0d0d0d !important;
@@ -91,7 +77,7 @@ section[data-testid="stSidebar"] { display: none; }
     border-bottom: 2px solid transparent !important;
     border-radius: 0 !important;
     padding: 0 14px !important;
-    height: 32px !important;
+    height: 30px !important;
     transition: color 0.15s, border-color 0.15s !important;
 }
 [data-testid="stTabBar"] button:hover {
@@ -108,7 +94,7 @@ section[data-testid="stSidebar"] { display: none; }
 /* ── Content Area ── */
 [data-testid="stTabsContent"] {
     background: #0a0a0a !important;
-    padding: 12px 16px !important;
+    padding: 8px 12px !important;
 }
 
 /* ── Section Header ── */
@@ -120,27 +106,26 @@ section[data-testid="stSidebar"] { display: none; }
     text-transform: uppercase;
     color: #f5a623;
     border-bottom: 1px solid #1e1e1e;
-    padding-bottom: 4px;
-    margin-bottom: 8px;
-    margin-top: 16px;
+    padding-bottom: 3px;
+    margin-bottom: 6px;
+    margin-top: 12px;
 }
 .sec-header:first-child { margin-top: 0; }
 
-/* ── Ticker Cards (Overview row) ── */
+/* ── Ticker Cards ── */
 .ticker-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
     gap: 1px;
     background: #161616;
     border: 1px solid #1e1e1e;
-    margin-bottom: 12px;
+    margin-bottom: 8px;
 }
 .ticker-card {
     background: #0d0d0d;
-    padding: 8px 10px;
+    padding: 6px 10px;
     cursor: default;
     transition: background 0.1s;
-    position: relative;
 }
 .ticker-card:hover { background: #121212; }
 .ticker-card .t-symbol {
@@ -149,20 +134,20 @@ section[data-testid="stSidebar"] { display: none; }
     font-weight: 600;
     color: #f5a623;
     letter-spacing: 0.08em;
-    margin-bottom: 2px;
+    margin-bottom: 1px;
 }
 .ticker-card .t-name {
-    font-size: 9px;
+    font-size: 8px;
     color: #444;
     letter-spacing: 0.03em;
-    margin-bottom: 6px;
+    margin-bottom: 4px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 .ticker-card .t-price {
     font-family: 'IBM Plex Mono', monospace;
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 500;
     color: #e8e0d0;
     letter-spacing: 0.02em;
@@ -172,13 +157,13 @@ section[data-testid="stSidebar"] { display: none; }
     font-family: 'IBM Plex Mono', monospace;
     font-size: 10px;
     font-weight: 500;
-    margin-top: 3px;
+    margin-top: 2px;
 }
 .ticker-card .t-change.up { color: #00c853; }
 .ticker-card .t-change.down { color: #ff3d3d; }
 .ticker-card .t-change.flat { color: #555; }
 
-/* ── Data Table ── */
+/* ── Data Table — Bloomberg dense ── */
 .bbg-table {
     width: 100%;
     border-collapse: collapse;
@@ -195,19 +180,20 @@ section[data-testid="stSidebar"] { display: none; }
     text-transform: uppercase;
     color: #444;
     text-align: right;
-    padding: 4px 8px;
+    padding: 3px 6px;
 }
 .bbg-table thead th:first-child { text-align: left; }
 .bbg-table tbody tr {
-    border-bottom: 1px solid #111;
+    border-bottom: 1px solid #0f0f0f;
     transition: background 0.08s;
 }
-.bbg-table tbody tr:hover { background: #101010; }
+.bbg-table tbody tr:hover { background: #0e0e0e; }
 .bbg-table tbody td {
-    padding: 5px 8px;
+    padding: 3px 6px;
     text-align: right;
     color: #b0a898;
     font-size: 11px;
+    line-height: 1.4;
 }
 .bbg-table tbody td:first-child {
     text-align: left;
@@ -224,13 +210,13 @@ section[data-testid="stSidebar"] { display: none; }
     gap: 1px;
     background: #161616;
     border: 1px solid #1e1e1e;
-    margin-bottom: 12px;
+    margin-bottom: 10px;
 }
 .kpi-item {
     background: #0d0d0d;
-    padding: 10px 16px;
+    padding: 8px 14px;
     flex: 1;
-    min-width: 120px;
+    min-width: 100px;
 }
 .kpi-label {
     font-size: 9px;
@@ -238,11 +224,11 @@ section[data-testid="stSidebar"] { display: none; }
     letter-spacing: 0.14em;
     text-transform: uppercase;
     color: #444;
-    margin-bottom: 4px;
+    margin-bottom: 3px;
 }
 .kpi-value {
     font-family: 'IBM Plex Mono', monospace;
-    font-size: 18px;
+    font-size: 17px;
     font-weight: 500;
     color: #e8e0d0;
     line-height: 1;
@@ -259,7 +245,7 @@ section[data-testid="stSidebar"] { display: none; }
 .bbg-divider {
     border: none;
     border-top: 1px solid #161616;
-    margin: 12px 0;
+    margin: 8px 0;
 }
 
 /* ── Loading spinner ── */
@@ -269,7 +255,7 @@ section[data-testid="stSidebar"] { display: none; }
 .js-plotly-plot .plotly { background: transparent !important; }
 
 /* ── Streamlit column gaps ── */
-[data-testid="stHorizontalBlock"] { gap: 8px !important; }
+[data-testid="stHorizontalBlock"] { gap: 6px !important; }
 [data-testid="column"] { padding: 0 !important; }
 
 /* ── Scrollbar ── */
@@ -279,7 +265,7 @@ section[data-testid="stSidebar"] { display: none; }
 ::-webkit-scrollbar-thumb:hover { background: #333; }
 
 /* ── Auto-refresh selector hide ── */
-.stSelectbox label { 
+.stSelectbox label {
     font-family: 'IBM Plex Mono', monospace !important;
     font-size: 10px !important;
     color: #444 !important;
@@ -295,10 +281,24 @@ section[data-testid="stSidebar"] { display: none; }
     color: #888 !important;
 }
 
+/* ── Text input (watchlist) ── */
+.stTextInput > div > div > input {
+    background: #0d0d0d !important;
+    border: 1px solid #1e1e1e !important;
+    border-radius: 0 !important;
+    font-family: 'IBM Plex Mono', monospace !important;
+    font-size: 11px !important;
+    color: #e8e0d0 !important;
+    padding: 4px 8px !important;
+}
+
 /* Sub-tabs inside tabs */
 [data-testid="stTabBar"] [data-baseweb="tab-list"] {
     background: transparent !important;
 }
+
+/* Remove extra padding from st.columns */
+[data-testid="stVerticalBlock"] { gap: 0.25rem !important; }
 </style>
 """, unsafe_allow_html=True)
 
