@@ -129,17 +129,13 @@ def get_futuros_dolar():
     try:
         soup = BeautifulSoup(html, "html.parser")
         tables = pd.read_html(html, flavor="lxml")
-        # Find futures table by header
         for df in tables:
             cols = [str(c).lower() for c in df.columns if isinstance(c, str)]
             flat = " ".join(str(c) for c in df.columns.tolist()).lower()
             if "tna" in flat or "pase" in flat:
-                # flatten multiindex
                 if isinstance(df.columns, pd.MultiIndex):
                     df.columns = df.columns.get_level_values(-1)
-                # find rows for futures
                 df = df.dropna(how="all")
-                # locate Especie/Último/TNA/Pase columns
                 df.columns = [str(c).strip() for c in df.columns]
                 needed = [c for c in df.columns if any(k in c.lower() for k in ["especie","ltimo","tna","pase","var"])]
                 if len(needed) >= 3:
@@ -159,7 +155,6 @@ def get_curva_rendimientos():
     if not html:
         return [], []
     try:
-        # Extract fut_data00 (CER) and fut_data02 (USD)
         m_cer = re.search(r'fut_data00\s*=\s*(\[\[.*?\]\])\s*;', html, re.DOTALL)
         m_usd = re.search(r'fut_data02\s*=\s*(\[\[.*?\]\])\s*;', html, re.DOTALL)
 
@@ -207,7 +202,7 @@ def get_eco_bonos_ars():
             "TasaFija": ["tasa fija"],
             "DollarLinked": ["dollar linked", "dólar linked"],
             "BOPREAL": ["bopreal"],
-            "USDduro": ["bonos en dólares d"],  # divisas
+            "USDduro": ["bonos en dólares d"],
         }
         for df in tables:
             flat_header = " ".join(str(c) for c in df.columns).lower()
