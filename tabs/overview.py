@@ -6,26 +6,31 @@ from data import (get_yf_quotes, get_dolar, get_riesgo_pais,
                   WORLD_TICKERS, COMMODITY_TICKERS, FX_TICKERS)
 
 
-def _ticker_cards(quotes: dict, cols_per_row=6):
-    items = list(quotes.items())
-    for i in range(0, len(items), cols_per_row):
-        chunk = items[i:i+cols_per_row]
-        cols  = st.columns(len(chunk))
-        for col, (name, q) in zip(cols, chunk):
-            price  = q.get("price")
-            chg    = q.get("change_pct", 0)
-            chg_str, css = fmt_change(chg)
-            with col:
-                st.markdown(f"""
-                <div class="ticker-card">
-                  <div class="t-symbol">{name}</div>
-                  <div class="t-price">{fmt_price(price)}</div>
-                  <div class="t-change {css}">{chg_str}</div>
-                </div>""", unsafe_allow_html=True)
+def _render_quotes_table(quotes: dict, title_col: str = "ÍNDICE"):
+    """Render quotes as a compact BBG table."""
+    rows = ""
+    for name, q in quotes.items():
+        price = q.get("price")
+        chg   = q.get("change_pct", 0)
+        chg_str, css = fmt_change(chg)
+        rows += f"""
+        <tr>
+          <td style="text-align:left;color:#f5a623;font-weight:500">{name}</td>
+          <td>{fmt_price(price)}</td>
+          <td class="{css}">{chg_str}</td>
+        </tr>"""
+    return f"""
+    <table class="bbg-table">
+      <thead><tr>
+        <th style="text-align:left">{title_col}</th>
+        <th>VALOR</th><th>% DÍA</th>
+      </tr></thead>
+      <tbody>{rows}</tbody>
+    </table>"""
 
 
 def render():
-    # ── Riesgo País KPI ──
+    # ── Riesgo País + FX KPI Strip ──
     rp = get_riesgo_pais()
     dol = get_dolar()
 
@@ -73,20 +78,25 @@ def render():
     </div>
     """, unsafe_allow_html=True)
 
-    # ── Indices globales ──
-    st.markdown('<div class="sec-header">ÍNDICES GLOBALES</div>', unsafe_allow_html=True)
-    with st.spinner(""):
-        world = get_yf_quotes(WORLD_TICKERS)
-    _ticker_cards(world, cols_per_row=6)
+    # ── Two-column layout like BBG ──
+    col_left, col_right = st.columns([3, 2])
 
-    # ── Commodities ──
-    st.markdown('<div class="sec-header">COMMODITIES</div>', unsafe_allow_html=True)
-    with st.spinner(""):
-        comm = get_yf_quotes(COMMODITY_TICKERS)
-    _ticker_cards(comm, cols_per_row=6)
+    with col_left:
+        # Indices globales
+        st.markdown('<div class="sec-header">ÍNDICES GLOBALES</div>', unsafe_allow_html=True)
+        with st.spinner(""):
+            world = get_yf_quotes(WORLD_TICKERS)
+        st.markdown(_render_quotes_table(world, "ÍNDICE"), unsafe_allow_html=True)
 
-    # ── FX ──
-    st.markdown('<div class="sec-header">DIVISAS</div>', unsafe_allow_html=True)
-    with st.spinner(""):
-        fx = get_yf_quotes(FX_TICKERS)
-    _ticker_cards(fx, cols_per_row=7)
+        # FX
+        st.markdown('<div class="sec-header">DIVISAS</div>', unsafe_allow_html=True)
+        with st.spinner(""):
+            fx = get_yf_quotes(FX_TICKERS)
+        st.markdown(_render_quotes_table(fx, "PAR"), unsafe_allow_html=True)
+
+    with col_right:
+        # Commodities
+        st.markdown('<div class="sec-header">COMMODITIES</div>', unsafe_allow_html=True)
+        with st.spinner(""):
+            comm = get_yf_quotes(COMMODITY_TICKERS)
+        st.markdown(_render_quotes_table(comm, "COMMODITY"), unsafe_allow_html=True)
