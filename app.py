@@ -1,11 +1,5 @@
 
 TERMINAL BBG
-/
-1772218049267_image.png
-1772218056276_image.png
-1772218061774_image.png
-1772218067889_image.png
-1772218073216_image.png
 
 import streamlit as st import sys, os sys.path.insert(0, os.path.dirname(os.path.dirname(__file__))) from data import get_acciones, get_cedears, get_dolar, get_mep, get_ccl, get_adrs, fmt_change import pandas as pd def _change_html(val): """Returns just the inner HTML for a change valu
 
