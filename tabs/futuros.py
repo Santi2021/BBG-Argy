@@ -41,11 +41,9 @@ def render():
         if df_fut.empty:
             st.markdown('<p style="color:#444;padding:20px">Sin datos de futuros</p>', unsafe_allow_html=True)
         else:
-            # Clean up
             df = df_fut.copy()
             df.columns = [c.strip() for c in df.columns]
 
-            # Table
             rows = ""
             for _, row in df.iterrows():
                 especie = row.iloc[0]
@@ -186,7 +184,6 @@ def render():
             fig.update_layout(**layout, height=460)
             st.plotly_chart(fig, use_container_width=True)
 
-            # Mini legend
             st.markdown("""
             <div style="display:flex;gap:24px;font-size:9px;color:#333;
                         letter-spacing:.1em;text-transform:uppercase;margin-top:-8px">
