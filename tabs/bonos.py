@@ -126,7 +126,6 @@ def render():
             st.markdown(f'<div class="sec-header">{label} · LEY {law}</div>', unsafe_allow_html=True)
             _render_bonds(bonds)
 
-            # Weighted summary
             if weighted:
                 wp  = weighted.get("price", 0)
                 wy  = weighted.get("yield", 0)
