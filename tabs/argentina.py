@@ -6,17 +6,25 @@ import pandas as pd
 
 
 def _change_html(val):
+    """Returns just the inner HTML for a change value (no <td> wrapper)."""
     if val is None:
-        return '<span class="neutral">—</span>'
+        return '<span style="color:#555">—</span>'
     try:
-        f = float(str(val).replace("%","").replace(",","."))
-        css = "up" if f > 0 else ("down" if f < 0 else "neutral")
-        sign = "+" if f > 0 else ""
-        return f'<span class="{css}">{sign}{f:.2f}%</span>'
+        s = str(val).replace("%", "").replace(",", ".").strip()
+        f = float(s)
+        if f > 0:
+            return f'<span style="color:#00c853">+{f:.2f}%</span>'
+        elif f < 0:
+            return f'<span style="color:#ff3d3d">{f:.2f}%</span>'
+        else:
+            return f'<span style="color:#555">0.00%</span>'
     except Exception:
         s = str(val)
-        css = "up" if "+" in s else ("down" if "-" in s else "neutral")
-        return f'<span class="{css}">{s}</span>'
+        if "+" in s:
+            return f'<span style="color:#00c853">{s}</span>'
+        elif "-" in s:
+            return f'<span style="color:#ff3d3d">{s}</span>'
+        return f'<span style="color:#555">{s}</span>'
 
 
 def _render_table(data: list, fields: list, headers: list):
@@ -26,25 +34,73 @@ def _render_table(data: list, fields: list, headers: list):
 
     rows = ""
     for item in data:
-        cells = ""
+        row_cells = ""
         for i, f in enumerate(fields):
             val = item.get(f, "—")
-            if "pct" in f.lower() or "change" in f.lower() or "var" in f.lower():
-                cell = _change_html(val)
-            elif i == 0:
-                cell = f'<td style="text-align:left;color:#f5a623;font-weight:500">{val}</td>'
-                rows += f"<tr>{cell}"
-                continue
-            else:
-                cell = f"<td>{val if val is not None else '—'}</td>"
-            cells += cell
-        rows += cells + "</tr>"
+            if val is None:
+                val = "—"
 
-    ths = "".join(f"<th>{ h }</th>" for h in headers[1:])
+            if i == 0:
+                # First column: ticker/symbol style
+                row_cells += f'<td style="text-align:left;color:#f5a623;font-weight:500">{val}</td>'
+            elif "pct" in f.lower() or "change" in f.lower() or "var" in f.lower():
+                row_cells += f'<td>{_change_html(val)}</td>'
+            else:
+                row_cells += f'<td>{val}</td>'
+        rows += f"<tr>{row_cells}</tr>"
+
+    ths = ""
+    for i, h in enumerate(headers):
+        if i == 0:
+            ths += f'<th style="text-align:left">{h}</th>'
+        else:
+            ths += f'<th>{h}</th>'
+
     html = f"""
     <div style="overflow-x:auto">
     <table class="bbg-table">
-      <thead><tr><th style="text-align:left">{headers[0]}</th>{ths}</tr></thead>
+      <thead><tr>{ths}</tr></thead>
+      <tbody>{rows}</tbody>
+    </table>
+    </div>"""
+    st.markdown(html, unsafe_allow_html=True)
+
+
+def _render_table_compact(data: list, fields: list, headers: list, max_rows=None):
+    """Compact table for side-by-side BBG layout."""
+    if not data:
+        st.markdown('<p style="color:#444;font-size:10px;padding:8px">Sin datos</p>', unsafe_allow_html=True)
+        return
+
+    display_data = data[:max_rows] if max_rows else data
+
+    rows = ""
+    for item in display_data:
+        row_cells = ""
+        for i, f in enumerate(fields):
+            val = item.get(f, "—")
+            if val is None:
+                val = "—"
+
+            if i == 0:
+                row_cells += f'<td style="text-align:left;color:#f5a623;font-weight:500;font-size:10px">{val}</td>'
+            elif "pct" in f.lower() or "change" in f.lower() or "var" in f.lower():
+                row_cells += f'<td style="font-size:10px">{_change_html(val)}</td>'
+            else:
+                row_cells += f'<td style="font-size:10px">{val}</td>'
+        rows += f"<tr>{row_cells}</tr>"
+
+    ths = ""
+    for i, h in enumerate(headers):
+        if i == 0:
+            ths += f'<th style="text-align:left">{h}</th>'
+        else:
+            ths += f'<th>{h}</th>'
+
+    html = f"""
+    <div style="overflow-x:auto">
+    <table class="bbg-table">
+      <thead><tr>{ths}</tr></thead>
       <tbody>{rows}</tbody>
     </table>
     </div>"""
@@ -60,70 +116,82 @@ def render():
         mep_data = get_mep()
         ccl_data = get_ccl()
 
-        # Main FX grid
+        # ── FX Table (compact, like BBG reference) ──
         fx_items = [
-            ("oficial",          "Oficial"),
-            ("blue",             "Blue"),
-            ("bolsa",            "MEP (AL30)"),
+            ("oficial",          "OFICIAL"),
+            ("blue",             "BLUE"),
+            ("bolsa",            "MEP / BOLSA"),
             ("contadoconliqui",  "CCL"),
-            ("tarjeta",          "Tarjeta"),
-            ("mayorista",        "Mayorista"),
-            ("cripto",           "Cripto"),
+            ("mayorista",        "MAYORISTA"),
+            ("cripto",           "CRIPTO"),
+            ("tarjeta",          "TARJETA"),
         ]
 
-        cards_html = '<div class="ticker-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">'
+        fx_rows = ""
         for key, label in fx_items:
             d = dol.get(key, {})
             compra = d.get("compra")
             venta  = d.get("venta")
             c_str  = f"{compra:,.2f}" if compra else "—"
             v_str  = f"{venta:,.2f}"  if venta  else "—"
+            fx_rows += f"""
+            <tr>
+              <td style="text-align:left;color:#f5a623;font-weight:500">{label}</td>
+              <td>{c_str}</td>
+              <td>{v_str}</td>
+            </tr>"""
 
-            if compra and venta:
-                spread = venta - compra
-                spread_str = f"spread {spread:,.2f}"
-            else:
-                spread_str = ""
+        st.markdown(f"""
+        <div class="sec-header">TIPOS DE CAMBIO</div>
+        <div style="overflow-x:auto">
+        <table class="bbg-table">
+          <thead><tr>
+            <th style="text-align:left">TIPO</th>
+            <th>COMPRA</th><th>VENTA</th>
+          </tr></thead>
+          <tbody>{fx_rows}</tbody>
+        </table>
+        </div>""", unsafe_allow_html=True)
 
-            cards_html += f"""
-            <div class="ticker-card">
-              <div class="t-symbol">{label}</div>
-              <div class="t-price">{v_str}</div>
-              <div class="t-name" style="color:#555;font-size:9px">
-                compra {c_str} &nbsp;·&nbsp; {spread_str}
-              </div>
-            </div>"""
-        cards_html += "</div>"
-        st.markdown(cards_html, unsafe_allow_html=True)
+        # ── MEP + CCL side by side ──
+        col_mep, col_ccl = st.columns(2)
 
-        # MEP por bono
-        if mep_data:
-            st.markdown('<div class="sec-header">MEP IMPLÍCITO POR BONO</div>', unsafe_allow_html=True)
-            cols_mep = ["ticker", "bid", "ask", "mark", "pct_change"]
-            hdrs_mep = ["BONO", "BID", "ASK", "MARK", "% DÍA"]
-            _render_table(mep_data[:15], cols_mep, hdrs_mep)
+        with col_mep:
+            if mep_data:
+                st.markdown('<div class="sec-header">MEP IMPLÍCITO (data912)</div>', unsafe_allow_html=True)
+                _render_table_compact(
+                    mep_data[:20],
+                    ["ticker", "bid", "ask", "mark", "pct_change"],
+                    ["TICKER", "BID MEP", "ASK MEP", "MARK", "% DÍA"],
+                )
 
-        # CCL por bono
-        if ccl_data:
-            st.markdown('<div class="sec-header">CCL IMPLÍCITO POR BONO</div>', unsafe_allow_html=True)
-            _render_table(ccl_data[:15], cols_mep, hdrs_mep)
+        with col_ccl:
+            if ccl_data:
+                st.markdown('<div class="sec-header">CCL IMPLÍCITO (data912)</div>', unsafe_allow_html=True)
+                _render_table_compact(
+                    ccl_data[:20],
+                    ["ticker", "bid", "ask", "mark", "pct_change"],
+                    ["TICKER", "BID CCL", "ASK CCL", "MARK", "% DÍA"],
+                )
 
     # ── Acciones ─────────────────────────────────────────────────────────────
     with subtabs[1]:
         with st.spinner(""):
             acc = get_acciones()
-        st.markdown(f'<div class="sec-header">PANEL MERVAL — {len(acc)} instrumentos</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="sec-header">ACCIONES ARG (data912) — {len(acc)} instrumentos</div>', unsafe_allow_html=True)
         fields = ["ticker", "last", "bid", "ask", "pct_change", "volume"]
-        hdrs   = ["ESPECIE", "ÚLTIMO", "BID", "ASK", "% DÍA", "VOL"]
+        hdrs   = ["TICKER", "PRECIO", "BID", "ASK", "% DÍA", "VOL"]
         _render_table(acc, fields, hdrs)
 
     # ── CEDEARs ──────────────────────────────────────────────────────────────
     with subtabs[2]:
         with st.spinner(""):
             ced = get_cedears()
+
+        # Show top CEDEARs first, then full list
         st.markdown(f'<div class="sec-header">CEDEARS — {len(ced)} instrumentos</div>', unsafe_allow_html=True)
         fields = ["ticker", "last", "bid", "ask", "pct_change", "volume"]
-        hdrs   = ["ESPECIE", "ÚLTIMO", "BID", "ASK", "% DÍA", "VOL"]
+        hdrs   = ["TICKER", "PRECIO", "BID", "ASK", "% DÍA", "VOL"]
         _render_table(ced, fields, hdrs)
 
     # ── ADRs ─────────────────────────────────────────────────────────────────
@@ -132,5 +200,5 @@ def render():
             adrs = get_adrs()
         st.markdown(f'<div class="sec-header">ADRs ARGENTINOS EN USA — {len(adrs)} instrumentos</div>', unsafe_allow_html=True)
         fields = ["ticker", "last", "bid", "ask", "pct_change", "volume"]
-        hdrs   = ["ESPECIE", "ÚLTIMO", "BID", "ASK", "% DÍA", "VOL"]
+        hdrs   = ["TICKER", "PRECIO", "BID", "ASK", "% DÍA", "VOL"]
         _render_table(adrs, fields, hdrs)
