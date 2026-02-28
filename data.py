@@ -303,6 +303,64 @@ def get_cauciones_resumen():
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+#  US Rates — NY Fed (SOFR, EFFR, OBFR) + Treasury Yields (yfinance)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@st.cache_data(ttl=TTL, show_spinner=False)
+def get_us_rates():
+    """
+    Returns dict with SOFR, EFFR, OBFR from NY Fed + Treasury yields from yfinance.
+    """
+    result = {}
+    
+    # NY Fed rates
+    for rate_type, path in [("SOFR", "secured/sofr"), ("EFFR", "unsecured/effr"), ("OBFR", "unsecured/obfr")]:
+        try:
+            r = requests.get(
+                f"https://markets.newyorkfed.org/api/rates/{path}/last/1.json",
+                headers=HEADERS, timeout=8
+            )
+            if r.status_code == 200:
+                data = r.json()
+                rates = data.get("refRates", [])
+                if rates:
+                    result[rate_type] = {
+                        "rate": rates[0].get("percentRate"),
+                        "date": rates[0].get("effectiveDate", ""),
+                        "target_from": rates[0].get("targetRateFrom"),
+                        "target_to": rates[0].get("targetRateTo"),
+                    }
+        except Exception:
+            pass
+    
+    # Treasury yields via yfinance
+    treasury_tickers = {
+        "3M": "^IRX",
+        "5Y": "^FVX",
+        "10Y": "^TNX",
+        "30Y": "^TYX",
+    }
+    try:
+        symbols = list(treasury_tickers.values())
+        raw = yf.download(symbols, period="2d", interval="1d", auto_adjust=True, progress=False, threads=True)
+        for name, sym in treasury_tickers.items():
+            try:
+                if len(symbols) == 1:
+                    closes = raw["Close"]
+                else:
+                    closes = raw["Close"][sym]
+                closes = closes.dropna()
+                if len(closes) >= 1:
+                    result[f"UST_{name}"] = {"rate": round(float(closes.iloc[-1]), 3)}
+            except Exception:
+                pass
+    except Exception:
+        pass
+    
+    return result
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 #  Ecovalores (scraping HTML estático)
 # ═══════════════════════════════════════════════════════════════════════════════
 
