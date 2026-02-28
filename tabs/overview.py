@@ -141,17 +141,23 @@ def _build_letras():
 
 
 def _build_cauciones():
+    from data import get_cauciones_resumen
+    cauc = get_cauciones_resumen()
     rows = ""
-    cauc_items = [
-        ("1 DÍA", "—", "—"),
-        ("7 DÍAS", "—", "—"),
-        ("14 DÍAS", "—", "—"),
-        ("30 DÍAS", "—", "—"),
-        ("60 DÍAS", "—", "—"),
-        ("90 DÍAS", "—", "—"),
-    ]
-    for plazo, tna, vol in cauc_items:
-        rows += f'<tr><td>{plazo}</td><td style="color:#ffcc00">{tna}</td><td style="color:#555">{vol}</td></tr>'
+    if cauc:
+        for d in cauc:
+            plazo = d.get("plazo", "—")
+            tasa = d.get("tasa", 0)
+            monto = d.get("monto_contado", "—")
+            if tasa and tasa > 0:
+                tasa_s = f'<span style="color:#00ff41;font-weight:bold">{tasa:.2f}%</span>'
+            else:
+                tasa_s = '<span style="color:#555">—</span>'
+            rows += f'<tr><td>{plazo} DÍAS</td><td>{tasa_s}</td><td style="color:#555;font-size:9px">{monto}</td></tr>'
+    else:
+        # Fallback if scraping fails
+        for plazo in ["1","3","7","14","30","60","90"]:
+            rows += f'<tr><td>{plazo} DÍAS</td><td style="color:#555">—</td><td style="color:#555">—</td></tr>'
     return rows
 
 
