@@ -98,8 +98,8 @@ def _build_adrs():
     rows = ""
     # Argentine ADRs only, in order
     ARG_ADRS = [
-        "YPF", "GGAL", "BBAR", "BMA", "MELI", "SUPV", "PAM",
-        "LOMA", "CEPU", "TEO", "TGS", "EDN", "CRESY", "IRS", "BIOX",
+        "YPF", "GGAL", "BBAR", "BMA", "SUPV", "PAM",
+        "LOMA", "CEPU", "TEO", "TGS", "EDN", "CRESY", "IRS",
     ]
     by_ticker = {}
     for item in (adrs or []):
