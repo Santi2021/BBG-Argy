@@ -23,18 +23,21 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stApp"] {
 section[data-testid="stSidebar"] { display: none !important; }
 
 [data-testid="stAppViewContainer"] { padding: 0 !important; }
-[data-testid="stAppViewContainer"] > div:first-child { padding-top: 0 !important; margin-top: 0 !important; }
-[data-testid="block-container"] { padding: 0 8px !important; max-width: 100% !important; padding-top: 0 !important; }
-.main .block-container { padding: 0 8px !important; max-width: 100% !important; padding-top: 0 !important; }
+[data-testid="stAppViewContainer"] > div { padding-top: 0 !important; margin-top: 0 !important; }
+[data-testid="block-container"] { padding: 0 8px !important; max-width: 100% !important; }
+.main .block-container { padding: 0 8px !important; max-width: 100% !important; }
 .main { padding-top: 0 !important; }
 [data-testid="stMain"] { padding-top: 0 !important; }
 [data-testid="stMainBlockContainer"] { padding-top: 0 !important; }
+.appview-container { padding-top: 0 !important; }
+.stApp > div:first-child { padding-top: 0 !important; }
+div[data-testid="stAppViewBlockContainer"] { padding-top: 0 !important; }
 
 .bbg-header {
     background: #000; border-bottom: 2px solid #ff6600;
     padding: 4px 16px 6px 16px; display: flex; align-items: center;
     justify-content: space-between; position: sticky; top: 0; z-index: 1000;
-    margin-bottom: 0; margin-top: -1rem;
+    margin-bottom: 0;
 }
 .bbg-logo { font-weight: bold; font-size: 18px; color: #ff6600; letter-spacing: 3px; }
 .bbg-clock { font-size: 11px; color: #ff6600; text-align: right; }
