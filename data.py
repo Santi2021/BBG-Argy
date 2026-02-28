@@ -309,7 +309,7 @@ def get_cauciones_resumen():
 @st.cache_data(ttl=TTL, show_spinner=False)
 def get_us_rates():
     """
-    Returns dict with SOFR, EFFR, OBFR from NY Fed + Treasury yields from yfinance.
+    Returns dict with SOFR, EFFR, OBFR from NY Fed + Treasury yields + TIPS + BEI from FRED.
     """
     result = {}
     
@@ -333,29 +333,41 @@ def get_us_rates():
         except Exception:
             pass
     
-    # Treasury yields via yfinance
-    treasury_tickers = {
-        "3M": "^IRX",
-        "5Y": "^FVX",
-        "10Y": "^TNX",
-        "30Y": "^TYX",
+    # FRED CSV — Treasury yields, TIPS, Breakeven Inflation
+    # No API key needed for CSV endpoint
+    fred_series = {
+        "UST_1M":   "DGS1MO",
+        "UST_3M":   "DGS3MO",
+        "UST_6M":   "DGS6MO",
+        "UST_1Y":   "DGS1",
+        "UST_2Y":   "DGS2",
+        "UST_5Y":   "DGS5",
+        "UST_10Y":  "DGS10",
+        "UST_30Y":  "DGS30",
+        "TIPS_5Y":  "DFII5",
+        "TIPS_10Y": "DFII10",
+        "BEI_5Y":   "T5YIE",
+        "BEI_10Y":  "T10YIE",
     }
-    try:
-        symbols = list(treasury_tickers.values())
-        raw = yf.download(symbols, period="2d", interval="1d", auto_adjust=True, progress=False, threads=True)
-        for name, sym in treasury_tickers.items():
-            try:
-                if len(symbols) == 1:
-                    closes = raw["Close"]
-                else:
-                    closes = raw["Close"][sym]
-                closes = closes.dropna()
-                if len(closes) >= 1:
-                    result[f"UST_{name}"] = {"rate": round(float(closes.iloc[-1]), 3)}
-            except Exception:
-                pass
-    except Exception:
-        pass
+    
+    for key, series_id in fred_series.items():
+        try:
+            r = requests.get(
+                f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}&cosd=2025-01-01",
+                headers=HEADERS, timeout=8
+            )
+            if r.status_code == 200:
+                lines = r.text.strip().split("\n")
+                if len(lines) > 1:
+                    last_line = lines[-1]
+                    parts = last_line.split(",")
+                    if len(parts) >= 2 and parts[1].strip() != ".":
+                        try:
+                            result[key] = {"rate": float(parts[1].strip())}
+                        except ValueError:
+                            pass
+        except Exception:
+            pass
     
     return result
 
