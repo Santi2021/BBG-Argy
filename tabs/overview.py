@@ -11,9 +11,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from data import (
     get_yf_quotes, get_dolar, get_riesgo_pais, get_acciones,
     get_bondterminal_bootstrap, get_futuros_dolar, get_adrs,
-    get_letras, get_bonos_ars,
+    get_letras, get_bonos_ars, get_us_rates,
     fmt_price, fmt_change,
-    COMMODITY_TICKERS, FX_TICKERS,
+    COMMODITY_TICKERS,
 )
 
 
@@ -130,14 +130,55 @@ def _build_commodities():
 
 
 def _build_crypto():
-    crypto_map = {"Bitcoin": "BTC-USD", "Ethereum": "ETH-USD", "Solana": "SOL-USD",
-                  "XRP": "XRP-USD", "Cardano": "ADA-USD", "Dogecoin": "DOGE-USD"}
-    crypto = get_yf_quotes(crypto_map)
+    # REMOVED - replaced by corporativos
+    return ""
+
+
+def _build_corporativos():
+    boot = get_bondterminal_bootstrap()
     rows = ""
-    for name, q in crypto.items():
-        p = q.get("price")
-        chg = q.get("change_pct", 0)
-        rows += f'<tr><td>{name}</td><td class="mkt">CRYPTO</td><td style="color:#ffcc00">{fmt_price(p, 2)}</td><td>{_chg_html(chg)}</td><td>{_pct_html(chg)}</td></tr>'
+    if isinstance(boot, dict) and "error" not in boot:
+        corp = boot.get("corporateSnapshot", {})
+        for b in corp.get("bonds", []):
+            tk = b.get("ticker") or b.get("localTicker", "")
+            p = b.get("price")
+            ch = b.get("change1D")
+            y = b.get("yield")
+            d = b.get("modDuration")
+            rows += f'<tr><td>{tk}</td><td style="color:#ffcc00">{f"{p:.2f}" if p else "—"}</td><td>{_chg_html(ch)}</td><td>{f"{y:.1f}%" if y else "—"}</td><td style="color:#555">{f"{d:.1f}" if d else "—"}</td></tr>'
+    return rows
+
+
+def _build_us_rates():
+    rates = get_us_rates()
+    rows = ""
+    
+    # Fed rates section
+    for label, key in [("SOFR", "SOFR"), ("EFFR", "EFFR"), ("OBFR", "OBFR")]:
+        data = rates.get(key, {})
+        rate = data.get("rate")
+        target_from = data.get("target_from")
+        target_to = data.get("target_to")
+        if rate is not None:
+            rate_s = f'<span style="color:#00ff41;font-weight:bold">{rate:.2f}%</span>'
+        else:
+            rate_s = '<span style="color:#555">—</span>'
+        target_s = f'{target_from:.2f}-{target_to:.2f}%' if target_from and target_to else ""
+        rows += f'<tr><td>{label}</td><td>{rate_s}</td><td style="color:#555;font-size:9px">{target_s}</td></tr>'
+    
+    # Separator
+    rows += '<tr><td colspan="3" style="border-bottom:1px solid #333;padding:1px"></td></tr>'
+    
+    # Treasury yields
+    for label, key in [("UST 3M", "UST_3M"), ("UST 5Y", "UST_5Y"), ("UST 10Y", "UST_10Y"), ("UST 30Y", "UST_30Y")]:
+        data = rates.get(key, {})
+        rate = data.get("rate")
+        if rate is not None:
+            rate_s = f'<span style="color:#ffcc00;font-weight:bold">{rate:.3f}%</span>'
+        else:
+            rate_s = '<span style="color:#555">—</span>'
+        rows += f'<tr><td>{label}</td><td>{rate_s}</td><td></td></tr>'
+    
     return rows
 
 
@@ -228,16 +269,6 @@ def _build_futuros():
     return rows
 
 
-def _build_fx():
-    fx = get_yf_quotes(FX_TICKERS)
-    rows = ""
-    for name, q in fx.items():
-        p = q.get("price")
-        chg = q.get("change_pct", 0)
-        rows += f'<tr><td>{name}</td><td style="color:#ffcc00">{fmt_price(p, 4)}</td><td>{_chg_html(chg)}</td><td>{_pct_html(chg)}</td></tr>'
-    return rows
-
-
 # ═══════════════════════════════════════════════════════════════════════════════
 #  RENDER
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -286,12 +317,12 @@ def render():
         r_acc = _build_acciones()
         r_adr = _build_adrs()
         r_com = _build_commodities()
-        r_cry = _build_crypto()
         r_bon = _build_bonos()
+        r_corp = _build_corporativos()
+        r_usr = _build_us_rates()
         r_let = _build_letras()
         r_cau = _build_cauciones()
         r_fut = _build_futuros()
-        r_fx  = _build_fx()
 
     # ── 3x3 GRID — New order ──
     PH = 340  # panel height in px
@@ -301,15 +332,15 @@ def render():
     p2 = _panel_html("FUTUROS DÓLAR", ["CONTRATO","ÚLTIMO","TNA"], r_fut, PH)
     p3 = _panel_html("LETRAS EN ARS", ["TICKER","MKT","PRECIO","% DIA"], r_let, PH)
 
-    # Row 2: Bonos Soberanos | Acciones ARG | ADRs
+    # Row 2: Bonos Soberanos | Corporativos | Curva US + SOFR
     p4 = _panel_html("BONOS SOBERANOS", ["BONO","PRECIO","Δ DIA","YIELD","DUR"], r_bon, PH)
-    p5 = _panel_html("ACCIONES ARG", ["TICKER","MKT","PRECIO","% DIA"], r_acc, PH)
-    p6 = _panel_html("ADRs ARGENTINOS", ["ADR","MKT","PRECIO","% DIA"], r_adr, PH)
+    p5 = _panel_html("CORPORATIVOS", ["BONO","PRECIO","Δ DIA","YIELD","DUR"], r_corp, PH)
+    p6 = _panel_html("US RATES · SOFR · TREASURY", ["RATE","VALOR","TARGET"], r_usr, PH)
 
-    # Row 3: Materias Primas | Divisas | Crypto
-    p7 = _panel_html("MATERIAS PRIMAS", ["NOMBRE","MKT","PRECIO","CAMBIO","% DIA"], r_com, PH)
-    p8 = _panel_html("DIVISAS", ["PAR","VALOR","CAMBIO","% DIA"], r_fx, PH)
-    p9 = _panel_html("CRIPTOMONEDAS", ["NOMBRE","MKT","PRECIO","CAMBIO","% DIA"], r_cry, PH)
+    # Row 3: Acciones ARG | ADRs | Materias Primas
+    p7 = _panel_html("ACCIONES ARG", ["TICKER","MKT","PRECIO","% DIA"], r_acc, PH)
+    p8 = _panel_html("ADRs ARGENTINOS", ["ADR","MKT","PRECIO","% DIA"], r_adr, PH)
+    p9 = _panel_html("MATERIAS PRIMAS", ["NOMBRE","MKT","PRECIO","CAMBIO","% DIA"], r_com, PH)
 
     grid_html = f"""
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;grid-template-rows:auto auto auto;gap:4px;margin-top:4px">
