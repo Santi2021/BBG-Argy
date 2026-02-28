@@ -139,7 +139,10 @@ def _build_corporativos():
     rows = ""
     if isinstance(boot, dict) and "error" not in boot:
         corp = boot.get("corporateSnapshot", {})
-        for b in corp.get("bonds", []):
+        bonds = corp.get("bonds", [])
+        # Sort by modDuration ascending (short to long)
+        bonds_sorted = sorted(bonds, key=lambda b: b.get("modDuration") or 999)
+        for b in bonds_sorted:
             tk = b.get("ticker") or b.get("localTicker", "")
             p = b.get("price")
             ch = b.get("change1D")
@@ -153,31 +156,49 @@ def _build_us_rates():
     rates = get_us_rates()
     rows = ""
     
-    # Fed rates section
-    for label, key in [("SOFR", "SOFR"), ("EFFR", "EFFR"), ("OBFR", "OBFR")]:
+    def _rate_html(key, color="#00ff41", decimals=2):
         data = rates.get(key, {})
         rate = data.get("rate")
+        if rate is not None:
+            return f'<span style="color:{color};font-weight:bold">{rate:.{decimals}f}%</span>'
+        return '<span style="color:#555">—</span>'
+    
+    # Fed overnight rates
+    for label, key in [("SOFR", "SOFR"), ("EFFR", "EFFR"), ("OBFR", "OBFR")]:
+        data = rates.get(key, {})
         target_from = data.get("target_from")
         target_to = data.get("target_to")
-        if rate is not None:
-            rate_s = f'<span style="color:#00ff41;font-weight:bold">{rate:.2f}%</span>'
-        else:
-            rate_s = '<span style="color:#555">—</span>'
         target_s = f'{target_from:.2f}-{target_to:.2f}%' if target_from and target_to else ""
-        rows += f'<tr><td>{label}</td><td>{rate_s}</td><td style="color:#555;font-size:9px">{target_s}</td></tr>'
+        rows += f'<tr><td>{label}</td><td>{_rate_html(key)}</td><td style="color:#555;font-size:9px">{target_s}</td></tr>'
     
     # Separator
     rows += '<tr><td colspan="3" style="border-bottom:1px solid #333;padding:1px"></td></tr>'
     
-    # Treasury yields
-    for label, key in [("UST 3M", "UST_3M"), ("UST 5Y", "UST_5Y"), ("UST 10Y", "UST_10Y"), ("UST 30Y", "UST_30Y")]:
-        data = rates.get(key, {})
-        rate = data.get("rate")
-        if rate is not None:
-            rate_s = f'<span style="color:#ffcc00;font-weight:bold">{rate:.3f}%</span>'
-        else:
-            rate_s = '<span style="color:#555">—</span>'
-        rows += f'<tr><td>{label}</td><td>{rate_s}</td><td></td></tr>'
+    # Full Treasury curve
+    for label, key in [("UST 1M","UST_1M"), ("UST 3M","UST_3M"), ("UST 6M","UST_6M"),
+                       ("UST 1Y","UST_1Y"), ("UST 2Y","UST_2Y"), ("UST 5Y","UST_5Y"),
+                       ("UST 10Y","UST_10Y"), ("UST 30Y","UST_30Y")]:
+        rows += f'<tr><td>{label}</td><td>{_rate_html(key, "#ffcc00")}</td><td></td></tr>'
+    
+    # 10Y-2Y Spread
+    ust10 = rates.get("UST_10Y", {}).get("rate")
+    ust2 = rates.get("UST_2Y", {}).get("rate")
+    if ust10 is not None and ust2 is not None:
+        spread = round((ust10 - ust2) * 100)
+        spr_color = "#00ff41" if spread > 0 else "#ff3b3b"
+        spr_s = f'<span style="color:{spr_color};font-weight:bold">{spread:+d} bps</span>'
+    else:
+        spr_s = '<span style="color:#555">—</span>'
+    rows += f'<tr><td>10Y-2Y SPR</td><td>{spr_s}</td><td></td></tr>'
+    
+    # Separator
+    rows += '<tr><td colspan="3" style="border-bottom:1px solid #333;padding:1px"></td></tr>'
+    
+    # TIPS + Breakeven
+    rows += f'<tr><td>TIPS 5Y</td><td>{_rate_html("TIPS_5Y", "#ff6600")}</td><td></td></tr>'
+    rows += f'<tr><td>TIPS 10Y</td><td>{_rate_html("TIPS_10Y", "#ff6600")}</td><td></td></tr>'
+    rows += f'<tr><td>BEI 5Y</td><td>{_rate_html("BEI_5Y", "#ff6600")}</td><td style="color:#555;font-size:9px">breakeven</td></tr>'
+    rows += f'<tr><td>BEI 10Y</td><td>{_rate_html("BEI_10Y", "#ff6600")}</td><td style="color:#555;font-size:9px">breakeven</td></tr>'
     
     return rows
 
