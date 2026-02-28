@@ -205,7 +205,7 @@ IOL_CAUCIONES_URL = "https://iol.invertironline.com/mercado/cotizaciones/argenti
 def get_cauciones():
     """
     Scrape cauciones from IOL.
-    Returns list of dicts: {plazo, moneda, monto_contado, monto_futuro, tasa_tomadora, fecha}
+    Returns list of dicts: {plazo, moneda, monto_contado, tasa, fecha}
     """
     try:
         r = requests.get(IOL_CAUCIONES_URL, headers=HEADERS, timeout=12)
@@ -214,7 +214,6 @@ def get_cauciones():
         
         table = soup.find("table", {"id": "cotizaciones"})
         if not table:
-            # Fallback: find any table with cotizaciones class
             table = soup.find("table", class_=re.compile(r"cotizacion"))
         if not table:
             return []
@@ -223,34 +222,32 @@ def get_cauciones():
         if not tbody:
             return []
         
-        rows = tbody.find_all("tr", role="row")
+        # No role="row" — just plain <tr> inside tbody
+        rows = tbody.find_all("tr")
         result = []
         
         for row in rows:
             cells = row.find_all("td")
-            if len(cells) < 6:
+            if len(cells) < 7:
                 continue
             
-            # Cell 0: Plazo (inside a link with class "links")
-            plazo_el = cells[0].find("a")
-            plazo = plazo_el.get_text(strip=True) if plazo_el else cells[0].get_text(strip=True)
+            # Cell 0: Plazo (plain text number like "3", "7", "14")
+            plazo = cells[0].get_text(strip=True)
             
-            # Cell 1: Moneda
+            # Cell 1: Moneda ("PESOS" / "DOLARES")
             moneda = cells[1].get_text(strip=True)
             
-            # Cell 2: Monto Contado (class "tar")
+            # Cell 2: Monto Contado
             monto_contado = cells[2].get_text(strip=True)
             
-            # Cell 3: Monto Futuro (class "tar")
+            # Cell 3: Monto Futuro
             monto_futuro = cells[3].get_text(strip=True)
             
-            # Cell 4: Fecha Vencimiento (class "tac")
-            fecha_venc = cells[4].get_text(strip=True)
+            # Cell 4: Fecha Vencimiento (usually empty)
             
-            # Cell 5: Tasa Tomadora (class "tac sorting_1", has data-order attribute)
+            # Cell 5: Tasa Tomadora — use data-order attribute (comma as decimal: "10,00")
             tasa_cell = cells[5]
             tasa_raw = tasa_cell.get("data-order") or tasa_cell.get_text(strip=True)
-            # Clean tasa: remove %, spaces, convert comma to dot
             tasa_str = str(tasa_raw).replace("%", "").replace(",", ".").replace(" ", "").strip()
             try:
                 tasa = float(tasa_str)
@@ -265,7 +262,6 @@ def get_cauciones():
                 "moneda": moneda,
                 "monto_contado": monto_contado,
                 "monto_futuro": monto_futuro,
-                "fecha_venc": fecha_venc,
                 "tasa": tasa,
                 "fecha": fecha,
             })
