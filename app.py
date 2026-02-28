@@ -91,7 +91,7 @@ div[data-testid="stAppViewBlockContainer"] { padding-top: 0 !important; }
 .bbg-table tbody td:first-child { color:#fff; font-weight:bold; }
 .sec-header { color:#ff6600; font-size:10px; font-weight:bold; letter-spacing:2px; text-transform:uppercase; border-bottom:1px solid #333; padding-bottom:3px; margin-bottom:4px; margin-top:8px; }
 
-.kpi-strip { display:flex; gap:1px; background:#333; border:1px solid #333; margin-bottom:4px; }
+.kpi-strip { display:flex; gap:1px; background:#333; border:1px solid #333; margin-bottom:10px; }
 .kpi-item { background:#000; padding:5px 10px; flex:1; min-width:80px; }
 .kpi-label { font-size:8px; font-weight:bold; letter-spacing:1px; text-transform:uppercase; color:#ff6600; }
 .kpi-value { font-size:15px; font-weight:bold; color:#ffcc00; line-height:1.1; }
