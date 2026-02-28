@@ -69,24 +69,54 @@ def _panel_html(title, headers, rows_html, max_height=320):
 def _build_acciones():
     acc = get_acciones()
     rows = ""
-    for item in (acc or [])[:20]:
-        tk = item.get("ticker", "—")
-        p = item.get("last")
-        chg = item.get("pct_change")
-        p_s = fmt_price(p) if p else "—"
-        rows += f'<tr><td>{tk}</td><td class="mkt">BYMA</td><td style="color:#ffcc00">{p_s}</td><td>{_pct_html(chg)}</td></tr>'
+    # Only Merval panel stocks (no "D" duplicates)
+    MERVAL = [
+        "ALUA", "BBAR", "BMA", "BYMA", "CEPU", "COME", "CRES", "EDN",
+        "GGAL", "LOMA", "METR", "PAMP", "SUPV", "TECO2", "TGNO4",
+        "TGSU2", "TRAN", "TXAR", "VALO", "YPFD",
+    ]
+    by_ticker = {}
+    for item in (acc or []):
+        tk = item.get("ticker", "")
+        if tk in MERVAL:
+            by_ticker[tk] = item
+    
+    for tk in MERVAL:
+        item = by_ticker.get(tk)
+        if item:
+            p = item.get("last")
+            chg = item.get("pct_change")
+            p_s = fmt_price(p) if p else "—"
+            rows += f'<tr><td>{tk}</td><td class="mkt">BYMA</td><td style="color:#ffcc00">{p_s}</td><td>{_pct_html(chg)}</td></tr>'
+        else:
+            rows += f'<tr><td>{tk}</td><td class="mkt">BYMA</td><td style="color:#555">—</td><td style="color:#555">—</td></tr>'
     return rows
 
 
 def _build_adrs():
-    adrs = get_adrs()
+    ADR_TICKERS = {
+        "YPF":   "YPF",
+        "GGAL":  "GGAL",
+        "BBAR":  "BBAR",
+        "BMA":   "BMA",
+        "MELI":  "MELI",
+        "SUPV":  "SUPV",
+        "PAM":   "PAM",
+        "LOMA":  "LOMA",
+        "CEPU":  "CEPU",
+        "TEO":   "TEO",
+        "TGS":   "TGS",
+        "EDN":   "EDN",
+        "CRESY": "CRESY",
+        "IRS":   "IRS",
+        "BIOX":  "BIOX",
+    }
+    adrs = get_yf_quotes(ADR_TICKERS)
     rows = ""
-    for item in (adrs or [])[:20]:
-        tk = item.get("ticker", "—")
-        p = item.get("last")
-        chg = item.get("pct_change")
-        p_s = fmt_price(p) if p else "—"
-        rows += f'<tr><td>{tk}</td><td class="mkt">NYSE</td><td style="color:#ffcc00">{p_s}</td><td>{_pct_html(chg)}</td></tr>'
+    for name, q in adrs.items():
+        p = q.get("price")
+        chg = q.get("change_pct", 0)
+        rows += f'<tr><td>{name}</td><td class="mkt">NYSE</td><td style="color:#ffcc00">{fmt_price(p, 2)}</td><td>{_pct_html(chg)}</td></tr>'
     return rows
 
 
