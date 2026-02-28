@@ -6,6 +6,7 @@ Sources:
   - Ecovalores        → futuros dólar, curva rendimientos, bonos ARS
   - dolarapi.com      → tipos de cambio (blue, oficial, tarjeta…)
   - yfinance          → índices globales, commodities, sectores US
+  - IOL               → cauciones (scraping)
 """
 
 import streamlit as st
@@ -192,6 +193,117 @@ def get_adrs():         return get_912("usa_adrs")
 def get_debug_fields():
     """Return debug info about API field names."""
     return st.session_state.get('_debug_fields', {})
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  IOL — Cauciones (scraping HTML)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+IOL_CAUCIONES_URL = "https://iol.invertironline.com/mercado/cotizaciones/argentina/cauciones/todas"
+
+@st.cache_data(ttl=TTL, show_spinner=False)
+def get_cauciones():
+    """
+    Scrape cauciones from IOL.
+    Returns list of dicts: {plazo, moneda, monto_contado, monto_futuro, tasa_tomadora, fecha}
+    """
+    try:
+        r = requests.get(IOL_CAUCIONES_URL, headers=HEADERS, timeout=12)
+        r.encoding = "utf-8"
+        soup = BeautifulSoup(r.text, "html.parser")
+        
+        table = soup.find("table", {"id": "cotizaciones"})
+        if not table:
+            # Fallback: find any table with cotizaciones class
+            table = soup.find("table", class_=re.compile(r"cotizacion"))
+        if not table:
+            return []
+        
+        tbody = table.find("tbody")
+        if not tbody:
+            return []
+        
+        rows = tbody.find_all("tr", role="row")
+        result = []
+        
+        for row in rows:
+            cells = row.find_all("td")
+            if len(cells) < 6:
+                continue
+            
+            # Cell 0: Plazo (inside a link with class "links")
+            plazo_el = cells[0].find("a")
+            plazo = plazo_el.get_text(strip=True) if plazo_el else cells[0].get_text(strip=True)
+            
+            # Cell 1: Moneda
+            moneda = cells[1].get_text(strip=True)
+            
+            # Cell 2: Monto Contado (class "tar")
+            monto_contado = cells[2].get_text(strip=True)
+            
+            # Cell 3: Monto Futuro (class "tar")
+            monto_futuro = cells[3].get_text(strip=True)
+            
+            # Cell 4: Fecha Vencimiento (class "tac")
+            fecha_venc = cells[4].get_text(strip=True)
+            
+            # Cell 5: Tasa Tomadora (class "tac sorting_1", has data-order attribute)
+            tasa_cell = cells[5]
+            tasa_raw = tasa_cell.get("data-order") or tasa_cell.get_text(strip=True)
+            # Clean tasa: remove %, spaces, convert comma to dot
+            tasa_str = str(tasa_raw).replace("%", "").replace(",", ".").replace(" ", "").strip()
+            try:
+                tasa = float(tasa_str)
+            except (ValueError, TypeError):
+                tasa = 0.0
+            
+            # Cell 6: Fecha/Hora
+            fecha = cells[6].get_text(strip=True) if len(cells) > 6 else ""
+            
+            result.append({
+                "plazo": plazo,
+                "moneda": moneda,
+                "monto_contado": monto_contado,
+                "monto_futuro": monto_futuro,
+                "fecha_venc": fecha_venc,
+                "tasa": tasa,
+                "fecha": fecha,
+            })
+        
+        return result
+    except Exception as e:
+        return []
+
+
+def get_cauciones_resumen():
+    """
+    Returns summarized cauciones: one row per plazo for PESOS,
+    showing the latest (highest) tasa tomadora.
+    Returns list of dicts: {plazo, tasa, volumen}
+    """
+    data = get_cauciones()
+    if not data:
+        return []
+    
+    # Group by plazo, only PESOS
+    pesos = [d for d in data if "PESOS" in d.get("moneda", "").upper()]
+    
+    # For each plazo, get the row with highest tasa
+    by_plazo = {}
+    for d in pesos:
+        p = d["plazo"]
+        if p not in by_plazo or d["tasa"] > by_plazo[p]["tasa"]:
+            by_plazo[p] = d
+    
+    # Sort by plazo numerically
+    def plazo_sort(item):
+        try:
+            return int(re.sub(r'\D', '', item["plazo"]))
+        except:
+            return 999
+    
+    result = sorted(by_plazo.values(), key=plazo_sort)
+    return result
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
