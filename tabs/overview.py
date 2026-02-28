@@ -94,29 +94,28 @@ def _build_acciones():
 
 
 def _build_adrs():
-    ADR_TICKERS = {
-        "YPF":   "YPF",
-        "GGAL":  "GGAL",
-        "BBAR":  "BBAR",
-        "BMA":   "BMA",
-        "MELI":  "MELI",
-        "SUPV":  "SUPV",
-        "PAM":   "PAM",
-        "LOMA":  "LOMA",
-        "CEPU":  "CEPU",
-        "TEO":   "TEO",
-        "TGS":   "TGS",
-        "EDN":   "EDN",
-        "CRESY": "CRESY",
-        "IRS":   "IRS",
-        "BIOX":  "BIOX",
-    }
-    adrs = get_yf_quotes(ADR_TICKERS)
+    adrs = get_adrs()
     rows = ""
-    for name, q in adrs.items():
-        p = q.get("price")
-        chg = q.get("change_pct", 0)
-        rows += f'<tr><td>{name}</td><td class="mkt">NYSE</td><td style="color:#ffcc00">{fmt_price(p, 2)}</td><td>{_pct_html(chg)}</td></tr>'
+    # Argentine ADRs only, in order
+    ARG_ADRS = [
+        "YPF", "GGAL", "BBAR", "BMA", "MELI", "SUPV", "PAM",
+        "LOMA", "CEPU", "TEO", "TGS", "EDN", "CRESY", "IRS", "BIOX",
+    ]
+    by_ticker = {}
+    for item in (adrs or []):
+        tk = item.get("ticker", "")
+        if tk in ARG_ADRS:
+            by_ticker[tk] = item
+    
+    for tk in ARG_ADRS:
+        item = by_ticker.get(tk)
+        if item:
+            p = item.get("last")
+            chg = item.get("pct_change")
+            p_s = fmt_price(p, 2) if p else "—"
+            rows += f'<tr><td>{tk}</td><td class="mkt">NYSE</td><td style="color:#ffcc00">{p_s}</td><td>{_pct_html(chg)}</td></tr>'
+        else:
+            rows += f'<tr><td>{tk}</td><td class="mkt">NYSE</td><td style="color:#555">—</td><td style="color:#555">—</td></tr>'
     return rows
 
 
