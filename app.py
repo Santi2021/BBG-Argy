@@ -37,7 +37,7 @@ div[data-testid="stAppViewBlockContainer"] { padding-top: 0 !important; }
     background: #000; border-bottom: 2px solid #ff6600;
     padding: 4px 16px 6px 16px; display: flex; align-items: center;
     justify-content: space-between; position: sticky; top: 0; z-index: 1000;
-    margin-bottom: 0;
+    margin-bottom: 6px;
 }
 .bbg-logo { font-weight: bold; font-size: 18px; color: #ff6600; letter-spacing: 3px; }
 .bbg-clock { font-size: 11px; color: #ff6600; text-align: right; }
