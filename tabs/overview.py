@@ -131,12 +131,27 @@ def _build_bonos():
 def _build_letras():
     letras = get_letras()
     rows = ""
-    for item in (letras or [])[:20]:
-        tk = item.get("ticker", "—")
-        p = item.get("last")
-        chg = item.get("pct_change")
-        p_s = fmt_price(p) if p else "—"
-        rows += f'<tr><td>{tk}</td><td class="mkt">BYMA</td><td style="color:#ffcc00">{p_s}</td><td>{_pct_html(chg)}</td></tr>'
+    # Only these tickers, in duration order
+    LETRAS_ORDER = [
+        "S16M6", "S17A6", "S30A6", "S29Y6", "T30J6", "S31L6",
+        "S31G6", "S30O6", "S30N6", "T15E7", "T30A7", "T31Y7", "T30J7",
+    ]
+    # Build lookup by ticker
+    by_ticker = {}
+    for item in (letras or []):
+        tk = item.get("ticker", "")
+        if tk in LETRAS_ORDER:
+            by_ticker[tk] = item
+    
+    for tk in LETRAS_ORDER:
+        item = by_ticker.get(tk)
+        if item:
+            p = item.get("last")
+            chg = item.get("pct_change")
+            p_s = fmt_price(p) if p else "—"
+            rows += f'<tr><td>{tk}</td><td class="mkt">BYMA</td><td style="color:#ffcc00">{p_s}</td><td>{_pct_html(chg)}</td></tr>'
+        else:
+            rows += f'<tr><td>{tk}</td><td class="mkt">BYMA</td><td style="color:#555">—</td><td style="color:#555">—</td></tr>'
     return rows
 
 
