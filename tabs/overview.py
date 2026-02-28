@@ -126,12 +126,18 @@ def _build_commodities():
         p = q.get("price")
         chg = q.get("change_pct", 0)
         rows += f'<tr><td>{name}</td><td class="mkt">CMX</td><td style="color:#ffcc00">{fmt_price(p, 2)}</td><td>{_chg_html(chg)}</td><td>{_pct_html(chg)}</td></tr>'
+    
+    # Separator
+    rows += '<tr><td colspan="5" style="border-bottom:1px solid #333;padding:1px"></td></tr>'
+    
+    # Crypto
+    crypto_map = {"BTC": "BTC-USD", "ETH": "ETH-USD", "SOL": "SOL-USD"}
+    crypto = get_yf_quotes(crypto_map)
+    for name, q in crypto.items():
+        p = q.get("price")
+        chg = q.get("change_pct", 0)
+        rows += f'<tr><td>{name}</td><td class="mkt">CRYPTO</td><td style="color:#ffcc00">{fmt_price(p, 2)}</td><td>{_chg_html(chg)}</td><td>{_pct_html(chg)}</td></tr>'
     return rows
-
-
-def _build_crypto():
-    # REMOVED - replaced by corporativos
-    return ""
 
 
 def _build_corporativos():
@@ -361,7 +367,7 @@ def render():
     # Row 3: Acciones ARG | ADRs | Materias Primas
     p7 = _panel_html("ACCIONES ARG", ["TICKER","MKT","PRECIO","% DIA"], r_acc, PH)
     p8 = _panel_html("ADRs ARGENTINOS", ["ADR","MKT","PRECIO","% DIA"], r_adr, PH)
-    p9 = _panel_html("MATERIAS PRIMAS", ["NOMBRE","MKT","PRECIO","CAMBIO","% DIA"], r_com, PH)
+    p9 = _panel_html("COMMODITIES & CRYPTO", ["NOMBRE","MKT","PRECIO","CAMBIO","% DIA"], r_com, PH)
 
     grid_html = f"""
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;grid-template-rows:auto auto auto;gap:4px;margin-top:4px">
