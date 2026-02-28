@@ -1,7 +1,7 @@
 import streamlit as st
 
 st.set_page_config(
-    page_title="Bloomberg Terminal ARG",
+    page_title="Markets Terminal",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -28,17 +28,19 @@ section[data-testid="stSidebar"] { display: none !important; }
 
 .bbg-header {
     background: #000; border-bottom: 2px solid #ff6600;
-    padding: 6px 16px; display: flex; align-items: center;
+    padding: 4px 16px 6px 16px; display: flex; align-items: center;
     justify-content: space-between; position: sticky; top: 0; z-index: 1000;
+    margin-bottom: 0;
 }
 .bbg-logo { font-weight: bold; font-size: 18px; color: #ff6600; letter-spacing: 3px; }
 .bbg-clock { font-size: 11px; color: #ff6600; text-align: right; }
 .bbg-clock .dt { color: #fff; font-size: 12px; display: block; }
 
-[data-testid="stTabs"] { margin: 0; padding: 0; }
+[data-testid="stTabs"] { margin: 0 !important; padding: 0 !important; }
 [data-testid="stTabBar"] {
     background: #000 !important; border-bottom: 1px solid #333 !important;
     padding: 0 !important; gap: 0 !important;
+    margin-top: 0 !important;
 }
 [data-testid="stTabBar"] button {
     font-family: 'Courier New', monospace !important;
@@ -55,6 +57,12 @@ section[data-testid="stSidebar"] { display: none !important; }
 }
 [data-testid="stTabBar"] [role="presentation"] { display: none !important; }
 [data-testid="stTabsContent"] { background: #000 !important; padding: 4px 4px !important; }
+
+/* Eliminate extra spacing between header and tabs */
+[data-testid="stVerticalBlock"] > [data-testid="stVerticalBlockBorderWrapper"]:first-child {
+    margin-top: 0 !important;
+    padding-top: 0 !important;
+}
 
 .sh { color:#ff6600; font-size:10px; font-weight:bold; letter-spacing:2px; text-transform:uppercase; border-bottom:1px solid #333; padding-bottom:3px; margin-bottom:4px; margin-top:8px; }
 
@@ -123,7 +131,7 @@ now_et = datetime.now(pytz.timezone("America/New_York"))
 
 st.markdown(f"""
 <div class="bbg-header">
-  <div class="bbg-logo">BLOOMBERG TERMINAL</div>
+  <div class="bbg-logo">MARKETS TERMINAL</div>
   <div class="bbg-clock">ULTIMA ACTUALIZACION<span class="dt">{now_ar.strftime('%d/%m/%Y')} &nbsp; ART {now_ar.strftime('%H:%M:%S')} · ET {now_et.strftime('%H:%M:%S')}</span></div>
 </div>
 """, unsafe_allow_html=True)
