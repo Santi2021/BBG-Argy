@@ -324,22 +324,65 @@ def get_futuros_dolar():
     if not html:
         return pd.DataFrame()
     try:
-        soup = BeautifulSoup(html, "html.parser")
-        tables = pd.read_html(html, flavor="lxml")
+        from io import StringIO
+        tables = pd.read_html(StringIO(html), flavor="lxml")
+        
+        best = None
         for df in tables:
-            flat = " ".join(str(c) for c in df.columns.tolist()).lower()
-            if "tna" in flat or "pase" in flat:
-                if isinstance(df.columns, pd.MultiIndex):
-                    df.columns = df.columns.get_level_values(-1)
-                df = df.dropna(how="all")
-                df.columns = [str(c).strip() for c in df.columns]
-                needed = [c for c in df.columns if any(k in c.lower() for k in ["especie","ltimo","tna","pase","var"])]
-                if len(needed) >= 3:
-                    sub = df[needed].copy()
-                    sub = sub[sub.iloc[:,0].str.match(r"[A-Z]{3}\d{2}", na=False)]
-                    sub.columns = ["Especie","Último","Var.Día","TNA%","Pase%"][:len(sub.columns)]
-                    return sub.reset_index(drop=True)
-        return pd.DataFrame()
+            # Skip MultiIndex tables — we want flat columns
+            if isinstance(df.columns, pd.MultiIndex):
+                continue
+            
+            cols_lower = [str(c).lower() for c in df.columns]
+            flat = " ".join(cols_lower)
+            
+            # Must have TNA and Pase columns (the futuros dólar table)
+            if "tna" not in flat or "pase" not in flat:
+                continue
+            
+            # Must have Especie column
+            if not any("especie" in c for c in cols_lower):
+                continue
+            
+            # Should contain FEB/MAR/ABR style contract names
+            df_clean = df.dropna(how="all")
+            if len(df_clean) < 3:
+                continue
+            
+            first_col = df_clean.iloc[:, 0].astype(str)
+            has_contracts = first_col.str.match(r"[A-Z]{3}\d{2}", na=False).any()
+            if not has_contracts:
+                continue
+            
+            # Prefer the smallest matching table (most specific)
+            if best is None or len(df_clean) < len(best):
+                best = df_clean.copy()
+        
+        if best is None:
+            return pd.DataFrame()
+        
+        # Filter to only contract rows (FEB26, MAR26, etc.)
+        best = best[best.iloc[:, 0].astype(str).str.match(r"[A-Z]{3}\d{2}", na=False)]
+        
+        # Normalize column names
+        best.columns = ["Especie", "Último", "Var.Día", "TNA%", "Pase%"][:len(best.columns)]
+        
+        # TNA comes as "217" meaning 21.7%, convert
+        def fix_tna(val):
+            try:
+                v = float(str(val).replace(",", ".").replace("-", "").strip())
+                if v > 100:  # values like 217 mean 21.7%
+                    return round(v / 10, 1)
+                return v
+            except:
+                return val
+        
+        if "TNA%" in best.columns:
+            best["TNA%"] = best["TNA%"].apply(fix_tna)
+        if "Pase%" in best.columns:
+            best["Pase%"] = best["Pase%"].apply(fix_tna)
+        
+        return best.reset_index(drop=True)
     except Exception:
         return pd.DataFrame()
 
