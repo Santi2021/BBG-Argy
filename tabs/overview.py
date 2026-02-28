@@ -1,8 +1,9 @@
 """
-OVERVIEW — Bloomberg Launchpad 3x3 Grid
-9 equal panels: Acciones ARG | ADRs ARG | Materias Primas
-                Criptomonedas | Bonos Soberanos | Letras ARS
-                Cauciones | Futuros Dólar | FXs
+OVERVIEW — Markets Terminal 3x3 Grid
+9 equal panels:
+  Row 1: Cauciones | Futuros Dólar | Letras ARS
+  Row 2: Bonos Soberanos | Acciones ARG | ADRs ARG
+  Row 3: Materias Primas | Divisas | Criptomonedas
 """
 import streamlit as st
 import sys, os
@@ -48,13 +49,13 @@ def _chg_html(val):
 
 
 def _panel_html(title, headers, rows_html, max_height=320):
-    """Build a complete panel with title bar and scrollable table."""
+    """Build a complete panel with title bar and scrollable table with sticky header."""
     ths = "".join(f"<th>{h}</th>" for h in headers)
     return f"""<div style="border:1px solid #333;background:#000;height:{max_height}px;display:flex;flex-direction:column;overflow:hidden">
   <div style="background:#111;color:#ff6600;font-size:9px;font-weight:bold;letter-spacing:2px;text-transform:uppercase;padding:3px 8px;border-bottom:1px solid #ff6600;flex-shrink:0">{title}</div>
   <div style="overflow-y:auto;flex:1">
-    <table class="t">
-      <thead><tr>{ths}</tr></thead>
+    <table class="t" style="border-collapse:collapse;width:100%">
+      <thead><tr style="position:sticky;top:0;z-index:2;background:#111">{ths}</tr></thead>
       <tbody>{rows_html}</tbody>
     </table>
   </div>
@@ -140,8 +141,6 @@ def _build_letras():
 
 
 def _build_cauciones():
-    # Cauciones data — placeholder structure, can be connected later
-    # For now show a placeholder
     rows = ""
     cauc_items = [
         ("1 DÍA", "—", "—"),
@@ -238,19 +237,23 @@ def render():
         r_fut = _build_futuros()
         r_fx  = _build_fx()
 
-    # ── 3x3 GRID via pure HTML ──
-    # Each panel is exactly 1/3 width and fixed height
+    # ── 3x3 GRID — New order ──
     PH = 340  # panel height in px
 
-    p1 = _panel_html("ACCIONES ARG", ["TICKER","MKT","PRECIO","% DIA"], r_acc, PH)
-    p2 = _panel_html("ADRs ARGENTINOS", ["ADR","MKT","PRECIO","% DIA"], r_adr, PH)
-    p3 = _panel_html("MATERIAS PRIMAS", ["NOMBRE","MKT","PRECIO","CAMBIO","% DIA"], r_com, PH)
-    p4 = _panel_html("CRIPTOMONEDAS", ["NOMBRE","MKT","PRECIO","CAMBIO","% DIA"], r_cry, PH)
-    p5 = _panel_html("BONOS SOBERANOS", ["BONO","PRECIO","Δ DIA","YIELD","DUR"], r_bon, PH)
-    p6 = _panel_html("LETRAS EN ARS", ["TICKER","MKT","PRECIO","% DIA"], r_let, PH)
-    p7 = _panel_html("CAUCIONES", ["PLAZO","TNA","VOLUMEN"], r_cau, PH)
-    p8 = _panel_html("FUTUROS DÓLAR", ["CONTRATO","ÚLTIMO","TNA"], r_fut, PH)
-    p9 = _panel_html("FXs · DIVISAS", ["PAR","VALOR","CAMBIO","% DIA"], r_fx, PH)
+    # Row 1: Cauciones | Futuros Dólar | Letras ARS
+    p1 = _panel_html("CAUCIONES", ["PLAZO","TNA","VOLUMEN"], r_cau, PH)
+    p2 = _panel_html("FUTUROS DÓLAR", ["CONTRATO","ÚLTIMO","TNA"], r_fut, PH)
+    p3 = _panel_html("LETRAS EN ARS", ["TICKER","MKT","PRECIO","% DIA"], r_let, PH)
+
+    # Row 2: Bonos Soberanos | Acciones ARG | ADRs
+    p4 = _panel_html("BONOS SOBERANOS", ["BONO","PRECIO","Δ DIA","YIELD","DUR"], r_bon, PH)
+    p5 = _panel_html("ACCIONES ARG", ["TICKER","MKT","PRECIO","% DIA"], r_acc, PH)
+    p6 = _panel_html("ADRs ARGENTINOS", ["ADR","MKT","PRECIO","% DIA"], r_adr, PH)
+
+    # Row 3: Materias Primas | Divisas | Crypto
+    p7 = _panel_html("MATERIAS PRIMAS", ["NOMBRE","MKT","PRECIO","CAMBIO","% DIA"], r_com, PH)
+    p8 = _panel_html("DIVISAS", ["PAR","VALOR","CAMBIO","% DIA"], r_fx, PH)
+    p9 = _panel_html("CRIPTOMONEDAS", ["NOMBRE","MKT","PRECIO","CAMBIO","% DIA"], r_cry, PH)
 
     grid_html = f"""
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;grid-template-rows:auto auto auto;gap:4px;margin-top:4px">
