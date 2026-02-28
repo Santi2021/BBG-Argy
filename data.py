@@ -604,7 +604,12 @@ def get_yf_quotes(tickers_dict: dict):
                 if len(symbols) == 1:
                     closes = raw["Close"]
                 else:
-                    closes = raw["Close"][sym]
+                    # yfinance >= 0.2.44 uses (ticker, field) order
+                    # Try both: raw[sym]["Close"] and raw["Close"][sym]
+                    try:
+                        closes = raw[sym]["Close"]
+                    except (KeyError, TypeError):
+                        closes = raw["Close"][sym]
                 closes = closes.dropna()
                 if len(closes) >= 2:
                     price = float(closes.iloc[-1])
