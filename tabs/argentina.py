@@ -56,7 +56,6 @@ SECTORS = {
     },
 }
 
-# All tickers for yfinance (BYMA = .BA suffix)
 ALL_TICKERS = []
 for sec in SECTORS.values():
     for t in sec["tickers"]:
@@ -70,15 +69,16 @@ for sec in SECTORS.values():
 
 @st.cache_data(ttl=60, show_spinner=False)
 def _fetch_arg_equity():
-    """Fetch all Argentine equity data from yfinance. Returns {ticker: {price, change_pct, volume, open, high, low, prev_close}}"""
+    """Fetch all Argentine equity data via yfinance .BA tickers."""
     import yfinance as yf
+    import pandas as pd
 
     yf_symbols = [f"{t}.BA" for t in ALL_TICKERS]
     result = {}
 
     try:
         raw = yf.download(
-            yf_symbols, period="2d", interval="1d", group_by="ticker",
+            yf_symbols, period="5d", interval="1d", group_by="ticker",
             auto_adjust=True, progress=False, threads=True,
         )
 
@@ -90,9 +90,13 @@ def _fetch_arg_equity():
                     try:
                         df = raw[yf_sym]
                     except (KeyError, TypeError):
-                        df = raw.xs(yf_sym, axis=1, level=0) if hasattr(raw.columns, 'levels') else None
+                        try:
+                            df = raw.xs(yf_sym, axis=1, level=0)
+                        except Exception:
+                            result[ticker] = {"price": None, "change_pct": 0, "volume": 0}
+                            continue
 
-                if df is None or df.empty:
+                if df is None or (hasattr(df, 'empty') and df.empty):
                     result[ticker] = {"price": None, "change_pct": 0, "volume": 0}
                     continue
 
@@ -112,15 +116,10 @@ def _fetch_arg_equity():
 
                 vol = int(volumes.iloc[-1]) if len(volumes) > 0 else 0
 
-                last_row = df.iloc[-1]
                 result[ticker] = {
                     "price": price,
                     "change_pct": round(chg, 2),
                     "volume": vol,
-                    "open": float(last_row.get("Open", 0)) if last_row.get("Open") else None,
-                    "high": float(last_row.get("High", 0)) if last_row.get("High") else None,
-                    "low": float(last_row.get("Low", 0)) if last_row.get("Low") else None,
-                    "prev_close": float(closes.iloc[-2]) if len(closes) >= 2 else None,
                 }
             except Exception:
                 result[ticker] = {"price": None, "change_pct": 0, "volume": 0}
@@ -160,7 +159,7 @@ def _vol_fmt(v):
     return str(v)
 
 
-def _panel_html(title, headers, rows_html, accent_color="#ff6600", max_height=340):
+def _panel_html(title, headers, rows_html, accent_color="#ff6600", max_height=220):
     ths = "".join(f"<th>{h}</th>" for h in headers)
     return f"""<div style="border:1px solid #333;background:#000;height:{max_height}px;display:flex;flex-direction:column;overflow:hidden">
   <div style="background:#111;color:{accent_color};font-size:9px;font-weight:bold;letter-spacing:2px;text-transform:uppercase;padding:3px 8px;border-bottom:1px solid {accent_color};flex-shrink:0">{title}</div>
@@ -175,7 +174,6 @@ def _panel_html(title, headers, rows_html, accent_color="#ff6600", max_height=34
 
 def _build_sector_panel(sector_name, tickers, quotes, accent_color):
     """Build rows for a sector panel."""
-    # Sort by volume descending
     items = []
     total_vol = 0
     for t in tickers:
@@ -204,85 +202,110 @@ def _build_sector_panel(sector_name, tickers, quotes, accent_color):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _build_heatmap(quotes):
-    """Build a treemap heatmap: size=volume, color=change_pct, grouped by sector."""
+    """Treemap heatmap: size=volume, color=change_pct, grouped by sector.
+    Uses flat structure with explicit sector totals for maximum compatibility."""
 
-    ids = []
     labels = []
     parents = []
     values = []
     colors = []
-    custom_data = []  # [price, change_pct, volume, sector]
+    text_lines = []
+    hover_texts = []
 
-    # Root
-    ids.append("MERVAL")
-    labels.append("MERVAL")
-    parents.append("")
-    values.append(0)
-    colors.append(0)
-    custom_data.append([0, 0, 0, ""])
-
+    # Collect all sector data first
+    sector_data = {}
     for sector_name, sector_info in SECTORS.items():
-        tickers = sector_info["tickers"]
-
+        children = []
         sector_vol = 0
-        for t in tickers:
-            q = quotes.get(t, {})
-            sector_vol += (q.get("volume", 0) or 0)
-
-        if sector_vol == 0:
-            continue
-
-        sector_id = f"S_{sector_name}"
-        ids.append(sector_id)
-        labels.append(sector_name)
-        parents.append("MERVAL")
-        values.append(0)
-        colors.append(0)
-        custom_data.append([0, 0, sector_vol, sector_name])
-
-        for t in tickers:
+        sector_chg_w = 0
+        for t in sector_info["tickers"]:
             q = quotes.get(t, {})
             vol = q.get("volume", 0) or 0
             chg = q.get("change_pct", 0) or 0
             price = q.get("price")
+            if vol > 0 and price is not None:
+                children.append((t, price, chg, vol))
+                sector_vol += vol
+                sector_chg_w += chg * vol
+        if sector_vol > 0:
+            avg_chg = sector_chg_w / sector_vol
+            sector_data[sector_name] = {
+                "children": children,
+                "total_vol": sector_vol,
+                "avg_chg": avg_chg,
+                "color": sector_info["color"],
+            }
 
-            if vol <= 0:
-                continue
-
-            ids.append(f"{sector_id}_{t}")
-            labels.append(t)
-            parents.append(sector_id)
-            values.append(vol)
-            colors.append(chg)
-            custom_data.append([price, chg, vol, sector_name])
-
-    if len(ids) <= 1:
+    if not sector_data:
         return None
 
-    # Color scale: red for negative, black for zero, green for positive
-    max_abs = max(abs(c) for c in colors) if colors else 1
-    max_abs = max(max_abs, 1)  # avoid division by zero
+    # Build flat arrays — root level sectors with "total" branchvalues
+    total_market_vol = sum(s["total_vol"] for s in sector_data.values())
+
+    # Root
+    labels.append("EQUITY ARG")
+    parents.append("")
+    values.append(total_market_vol)
+    colors.append(0)
+    text_lines.append("")
+    hover_texts.append(f"Volumen total: {_vol_fmt(total_market_vol)}")
+
+    for sector_name, sdata in sector_data.items():
+        # Sector node
+        labels.append(sector_name)
+        parents.append("EQUITY ARG")
+        values.append(sdata["total_vol"])
+        colors.append(sdata["avg_chg"])
+        text_lines.append(f"<b>{sector_name}</b><br>{sdata['avg_chg']:+.2f}%")
+        hover_texts.append(
+            f"<b>{sector_name}</b><br>"
+            f"Variación promedio: {sdata['avg_chg']:+.2f}%<br>"
+            f"Volumen: {_vol_fmt(sdata['total_vol'])}<br>"
+            f"Empresas: {len(sdata['children'])}"
+        )
+
+        # Company nodes
+        for t, price, chg, vol in sdata["children"]:
+            p_str = f"${price:,.0f}" if price >= 100 else f"${price:,.2f}"
+            labels.append(t)
+            parents.append(sector_name)
+            values.append(vol)
+            colors.append(chg)
+            text_lines.append(f"<b>{t}</b><br>{chg:+.2f}%")
+            hover_texts.append(
+                f"<b>{t}</b><br>"
+                f"Sector: {sector_name}<br>"
+                f"Precio: {p_str}<br>"
+                f"Variación: {chg:+.2f}%<br>"
+                f"Volumen: {_vol_fmt(vol)}"
+            )
+
+    # Color range from leaf nodes
+    leaf_colors = [c for c, p in zip(colors, parents) if p not in ("", "EQUITY ARG")]
+    max_abs = max(abs(c) for c in leaf_colors) if leaf_colors else 1
+    max_abs = max(max_abs, 0.5)
 
     fig = go.Figure(go.Treemap(
-        ids=ids,
         labels=labels,
         parents=parents,
         values=values,
+        branchvalues="total",
         marker=dict(
             colors=colors,
             colorscale=[
                 [0.0, "#8b0000"],
-                [0.15, "#ff3b3b"],
-                [0.4, "#551111"],
-                [0.5, "#1a1a1a"],
-                [0.6, "#115511"],
-                [0.85, "#00ff41"],
+                [0.15, "#cc2222"],
+                [0.35, "#551515"],
+                [0.5, "#222222"],
+                [0.65, "#155515"],
+                [0.85, "#22cc22"],
                 [1.0, "#006400"],
             ],
             cmid=0,
             cmin=-max_abs,
             cmax=max_abs,
-            line=dict(color="#000", width=1.5),
+            line=dict(color="#000", width=2),
+            cornerradius=3,
             colorbar=dict(
                 title=dict(text="% DIA", font=dict(size=9, color="#ff6600", family="Courier New")),
                 tickfont=dict(size=8, color="#ccc", family="Courier New"),
@@ -290,31 +313,24 @@ def _build_heatmap(quotes):
                 bgcolor="rgba(0,0,0,0)",
                 bordercolor="#333",
                 borderwidth=1,
-                len=0.6,
+                len=0.5,
                 thickness=12,
                 x=1.01,
             ),
         ),
-        customdata=custom_data,
-        texttemplate="<b>%{label}</b><br>%{customdata[1]:+.2f}%",
-        hovertemplate=(
-            "<b>%{label}</b><br>"
-            "Sector: %{customdata[3]}<br>"
-            "Precio: $%{customdata[0]:,.2f}<br>"
-            "Variación: %{customdata[1]:+.2f}%<br>"
-            "Volumen: %{customdata[2]:,.0f}"
-            "<extra></extra>"
-        ),
-        textfont=dict(family="Courier New", size=11, color="#fff"),
-        tiling=dict(packing="squarify", pad=2),
+        text=text_lines,
+        textinfo="text",
+        hovertext=hover_texts,
+        hoverinfo="text",
+        textfont=dict(family="Courier New", size=12, color="#fff"),
+        tiling=dict(packing="squarify", pad=3),
         pathbar=dict(
             visible=True,
-            textfont=dict(family="Courier New", size=9, color="#ff6600"),
-            thickness=18,
+            textfont=dict(family="Courier New", size=10, color="#ff6600"),
+            thickness=20,
             edgeshape=">",
             side="top",
         ),
-        branchvalues="total",
         maxdepth=3,
     ))
 
@@ -322,8 +338,8 @@ def _build_heatmap(quotes):
         paper_bgcolor="#000",
         plot_bgcolor="#000",
         font=dict(family="Courier New", size=10, color="#ccc"),
-        margin=dict(l=4, r=4, t=30, b=4),
-        height=700,
+        margin=dict(l=4, r=4, t=35, b=4),
+        height=720,
         title=dict(
             text="EQUITY ARG · HEATMAP POR SECTOR — TAMAÑO = VOLUMEN · COLOR = VARIACIÓN DIA",
             font=dict(family="Courier New", size=10, color="#ff6600"),
@@ -350,7 +366,6 @@ def render():
         quotes = _fetch_arg_equity()
 
     with subtabs[0]:
-        PH = 340
         sector_list = list(SECTORS.items())
 
         panels = []
@@ -363,7 +378,6 @@ def render():
             )
             panels.append(p)
 
-        # Pad to 9 if needed
         while len(panels) < 9:
             panels.append(_panel_html("—", [], "", "#333"))
 
