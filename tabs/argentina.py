@@ -93,11 +93,11 @@ def _fetch_arg_equity():
                         try:
                             df = raw.xs(yf_sym, axis=1, level=0)
                         except Exception:
-                            result[ticker] = {"price": None, "change_pct": 0, "volume": 0}
+                            result[ticker] = {"price": None, "change_pct": 0, "volume": 0, "monto": 0}
                             continue
 
                 if df is None or (hasattr(df, 'empty') and df.empty):
-                    result[ticker] = {"price": None, "change_pct": 0, "volume": 0}
+                    result[ticker] = {"price": None, "change_pct": 0, "volume": 0, "monto": 0}
                     continue
 
                 closes = df["Close"].dropna()
@@ -115,18 +115,20 @@ def _fetch_arg_equity():
                     chg = 0
 
                 vol = int(volumes.iloc[-1]) if len(volumes) > 0 else 0
+                monto = vol * price if (vol and price) else 0
 
                 result[ticker] = {
                     "price": price,
                     "change_pct": round(chg, 2),
                     "volume": vol,
+                    "monto": round(monto),
                 }
             except Exception:
-                result[ticker] = {"price": None, "change_pct": 0, "volume": 0}
+                result[ticker] = {"price": None, "change_pct": 0, "volume": 0, "monto": 0}
 
     except Exception:
         for t in ALL_TICKERS:
-            result[t] = {"price": None, "change_pct": 0, "volume": 0}
+            result[t] = {"price": None, "change_pct": 0, "volume": 0, "monto": 0}
 
     return result
 
@@ -175,26 +177,26 @@ def _panel_html(title, headers, rows_html, accent_color="#ff6600", max_height=22
 def _build_sector_panel(sector_name, tickers, quotes, accent_color):
     """Build rows for a sector panel."""
     items = []
-    total_vol = 0
+    total_monto = 0
     for t in tickers:
         q = quotes.get(t, {})
-        vol = q.get("volume", 0) or 0
-        items.append((t, q, vol))
-        total_vol += vol
+        monto = q.get("monto", 0) or 0
+        items.append((t, q, monto))
+        total_monto += monto
     items.sort(key=lambda x: x[2], reverse=True)
 
     rows = ""
-    for t, q, vol in items:
+    for t, q, monto in items:
         p = q.get("price")
         chg = q.get("change_pct", 0)
         p_s = fmt_price(p) if p else "—"
-        v_s = _vol_fmt(vol)
-        rows += f'<tr><td>{t}</td><td style="color:#ffcc00">{p_s}</td><td>{_pct_html(chg)}</td><td style="color:#555">{v_s}</td></tr>'
+        m_s = _vol_fmt(monto)
+        rows += f'<tr><td>{t}</td><td style="color:#ffcc00">{p_s}</td><td>{_pct_html(chg)}</td><td style="color:#555">{m_s}</td></tr>'
 
     count = len(tickers)
-    vol_s = _vol_fmt(total_vol)
-    title = f"{sector_name} · {count} · VOL {vol_s}"
-    return _panel_html(title, ["TICKER", "PRECIO", "% DIA", "VOL"], rows, accent_color)
+    vol_s = _vol_fmt(total_monto)
+    title = f"{sector_name} · {count} · MONTO {vol_s}"
+    return _panel_html(title, ["TICKER", "PRECIO", "% DIA", "MONTO"], rows, accent_color)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -216,22 +218,22 @@ def _build_heatmap(quotes):
     sector_data = {}
     for sector_name, sector_info in SECTORS.items():
         children = []
-        sector_vol = 0
+        sector_monto = 0
         sector_chg_w = 0
         for t in sector_info["tickers"]:
             q = quotes.get(t, {})
-            vol = q.get("volume", 0) or 0
+            monto = q.get("monto", 0) or 0
             chg = q.get("change_pct", 0) or 0
             price = q.get("price")
-            if vol > 0 and price is not None:
-                children.append((t, price, chg, vol))
-                sector_vol += vol
-                sector_chg_w += chg * vol
-        if sector_vol > 0:
-            avg_chg = sector_chg_w / sector_vol
+            if monto > 0 and price is not None:
+                children.append((t, price, chg, monto))
+                sector_monto += monto
+                sector_chg_w += chg * monto
+        if sector_monto > 0:
+            avg_chg = sector_chg_w / sector_monto
             sector_data[sector_name] = {
                 "children": children,
-                "total_vol": sector_vol,
+                "total_monto": sector_monto,
                 "avg_chg": avg_chg,
                 "color": sector_info["color"],
             }
@@ -240,36 +242,36 @@ def _build_heatmap(quotes):
         return None
 
     # Build flat arrays — root level sectors with "total" branchvalues
-    total_market_vol = sum(s["total_vol"] for s in sector_data.values())
+    total_market_monto = sum(s["total_monto"] for s in sector_data.values())
 
     # Root
     labels.append("EQUITY ARG")
     parents.append("")
-    values.append(total_market_vol)
+    values.append(total_market_monto)
     colors.append(0)
     text_lines.append("")
-    hover_texts.append(f"Volumen total: {_vol_fmt(total_market_vol)}")
+    hover_texts.append(f"Monto total: {_vol_fmt(total_market_monto)}")
 
     for sector_name, sdata in sector_data.items():
         # Sector node
         labels.append(sector_name)
         parents.append("EQUITY ARG")
-        values.append(sdata["total_vol"])
+        values.append(sdata["total_monto"])
         colors.append(sdata["avg_chg"])
         text_lines.append(f"<b>{sector_name}</b><br>{sdata['avg_chg']:+.2f}%")
         hover_texts.append(
             f"<b>{sector_name}</b><br>"
             f"Variación promedio: {sdata['avg_chg']:+.2f}%<br>"
-            f"Volumen: {_vol_fmt(sdata['total_vol'])}<br>"
+            f"Monto: {_vol_fmt(sdata['total_monto'])}<br>"
             f"Empresas: {len(sdata['children'])}"
         )
 
         # Company nodes
-        for t, price, chg, vol in sdata["children"]:
+        for t, price, chg, monto in sdata["children"]:
             p_str = f"${price:,.0f}" if price >= 100 else f"${price:,.2f}"
             labels.append(t)
             parents.append(sector_name)
-            values.append(vol)
+            values.append(monto)
             colors.append(chg)
             text_lines.append(f"<b>{t}</b><br>{chg:+.2f}%")
             hover_texts.append(
@@ -277,7 +279,7 @@ def _build_heatmap(quotes):
                 f"Sector: {sector_name}<br>"
                 f"Precio: {p_str}<br>"
                 f"Variación: {chg:+.2f}%<br>"
-                f"Volumen: {_vol_fmt(vol)}"
+                f"Monto: {_vol_fmt(monto)}"
             )
 
     # Color range from leaf nodes
@@ -341,7 +343,7 @@ def _build_heatmap(quotes):
         margin=dict(l=4, r=4, t=35, b=4),
         height=720,
         title=dict(
-            text="EQUITY ARG · HEATMAP POR SECTOR — TAMAÑO = VOLUMEN · COLOR = VARIACIÓN DIA",
+            text="EQUITY ARG · HEATMAP POR SECTOR — TAMAÑO = MONTO OPERADO · COLOR = VARIACIÓN DIA",
             font=dict(family="Courier New", size=10, color="#ff6600"),
             x=0.01, xanchor="left",
         ),
