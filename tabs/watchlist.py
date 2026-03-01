@@ -26,7 +26,7 @@ def _tv_widget_html(symbol, height=640):
         "gridColor": "rgba(30, 30, 30, 1)",
         "toolbar_bg": "#000000",
         "enable_publishing": false,
-        "hide_top_toolbar": false,
+        "hide_top_toolbar": true,
         "hide_legend": false,
         "save_image": true,
         "hide_volume": false,
