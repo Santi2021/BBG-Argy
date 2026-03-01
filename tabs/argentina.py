@@ -244,19 +244,30 @@ def _build_heatmap(quotes):
     # Build flat arrays — root level sectors with "total" branchvalues
     total_market_monto = sum(s["total_monto"] for s in sector_data.values())
 
+    # We use sqrt(monto) for treemap sizing to compress the scale —
+    # otherwise YPF/GGAL dominate and smaller companies are invisible.
+    # The color and hover still show real values.
+    import math
+
+    def _compress(v):
+        """sqrt transform to compress size differences while preserving order."""
+        return math.sqrt(max(v, 0))
+
     # Root
+    root_compressed = sum(_compress(s["total_monto"]) for s in sector_data.values())
     labels.append("EQUITY ARG")
     parents.append("")
-    values.append(total_market_monto)
+    values.append(root_compressed)
     colors.append(0)
     text_lines.append("")
     hover_texts.append(f"Monto total: {_vol_fmt(total_market_monto)}")
 
     for sector_name, sdata in sector_data.items():
-        # Sector node
+        # Sector node — compressed value = sum of compressed children
+        sector_compressed = sum(_compress(m) for _, _, _, m in sdata["children"])
         labels.append(sector_name)
         parents.append("EQUITY ARG")
-        values.append(sdata["total_monto"])
+        values.append(sector_compressed)
         colors.append(sdata["avg_chg"])
         text_lines.append(f"<b>{sector_name}</b><br>{sdata['avg_chg']:+.2f}%")
         hover_texts.append(
@@ -271,7 +282,7 @@ def _build_heatmap(quotes):
             p_str = f"${price:,.0f}" if price >= 100 else f"${price:,.2f}"
             labels.append(t)
             parents.append(sector_name)
-            values.append(monto)
+            values.append(_compress(monto))
             colors.append(chg)
             text_lines.append(f"<b>{t}</b><br>{chg:+.2f}%")
             hover_texts.append(
