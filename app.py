@@ -262,7 +262,7 @@ st.markdown(f"""
 
 from tabs import overview, argentina, bonos, futuros, mundo, watchlist
 
-tabs = st.tabs(["OVERVIEW", "🇦🇷 ARGENTINA", "BONOS", "FUTUROS", "MUNDO", "📈 GRAFICADORA"])
+tabs = st.tabs(["OVERVIEW", "🇦🇷 ARGENTINA", "BONOS", "FUTUROS", "MUNDO", "GRAFICADORA"])
 
 with tabs[0]: overview.render()
 with tabs[1]: argentina.render()
