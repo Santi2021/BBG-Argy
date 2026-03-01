@@ -45,101 +45,156 @@ def _bonds(bonds):
     <tbody>{rows}</tbody></table>""", unsafe_allow_html=True)
 
 
-def _yield_curve_chart(bonds, title="", height=320):
-    """
-    Bloomberg-style Yield vs Duration scatter with fitted curve.
-    bonds: list of dicts with 'ticker', 'yield', 'modDuration', optionally 'law' or section info.
-    """
-    if not bonds:
+def _fit_curve(durations, yields, x_range, color, name, fig):
+    """Add a fitted polynomial curve trace."""
+    if len(durations) < 2:
         return
-
-    # Extract data points
-    points = []
-    for b in bonds:
-        y = b.get("yield")
-        d = b.get("modDuration")
-        tk = b.get("ticker") or b.get("localTicker", "")
-        if y is not None and d is not None and d > 0:
-            points.append({"ticker": tk, "yield": float(y), "duration": float(d),
-                           "price": b.get("price"), "change1D": b.get("change1D"),
-                           "law": b.get("_law", "")})
-
-    if len(points) < 2:
-        return
-
-    # Sort by duration for curve fitting
-    points.sort(key=lambda p: p["duration"])
-    durations = [p["duration"] for p in points]
-    yields = [p["yield"] for p in points]
-    tickers = [p["ticker"] for p in points]
-    laws = [p.get("law", "") for p in points]
-
-    fig = go.Figure()
-
-    # ── Fitted curve (polynomial) ──
     try:
         dur_arr = np.array(durations)
         yld_arr = np.array(yields)
-        # Degree 2 or 3 depending on number of points
-        deg = min(3, len(points) - 1)
+        deg = min(2, len(durations) - 1)
         coeffs = np.polyfit(dur_arr, yld_arr, deg)
         poly = np.poly1d(coeffs)
-        x_smooth = np.linspace(min(durations) * 0.9, max(durations) * 1.05, 100)
+        x_smooth = np.linspace(x_range[0], x_range[1], 80)
         y_smooth = poly(x_smooth)
-
         fig.add_trace(go.Scatter(
             x=x_smooth, y=y_smooth,
             mode="lines",
-            line=dict(color="#ff6600", width=1.5, dash="dot"),
-            name="Curva",
+            line=dict(color=color, width=1.5, dash="dot"),
+            name=f"Curva {name}",
             hoverinfo="skip",
             showlegend=False,
         ))
     except Exception:
         pass
 
-    # ── Determine colors by law if available ──
-    unique_laws = list(set(laws))
-    if len(unique_laws) > 1:
-        color_map = {}
-        palette = ["#00ff41", "#ff6600", "#ffcc00", "#00bfff", "#ff3b3b", "#cc66ff"]
-        for i, law in enumerate(sorted(unique_laws)):
-            color_map[law] = palette[i % len(palette)]
 
-        for law_name in sorted(unique_laws):
-            law_pts = [p for p in points if p.get("law", "") == law_name]
+def _resolve_text_positions(points):
+    """Assign text positions to avoid overlap between nearby points."""
+    n = len(points)
+    positions = ["top center"] * n
+    if n < 2:
+        return positions
+
+    dur_range = max(p["duration"] for p in points) - min(p["duration"] for p in points)
+    yld_range = max(p["yield"] for p in points) - min(p["yield"] for p in points)
+    if dur_range == 0: dur_range = 1
+    if yld_range == 0: yld_range = 1
+
+    options = ["top center", "bottom center", "top right", "bottom right",
+               "top left", "bottom left", "middle right", "middle left"]
+
+    for i in range(n):
+        for j in range(i + 1, n):
+            dx = abs(points[i]["duration"] - points[j]["duration"]) / dur_range
+            dy = abs(points[i]["yield"] - points[j]["yield"]) / yld_range
+            if dx < 0.12 and dy < 0.18:
+                used = {positions[k] for k in range(j)}
+                for opt in options:
+                    if opt not in used:
+                        positions[j] = opt
+                        break
+                else:
+                    positions[j] = "bottom center"
+    return positions
+
+
+def _yield_curve_chart(bonds, title="", height=340):
+    """Bloomberg-style Yield vs Duration scatter with fitted curves per group."""
+    if not bonds:
+        return
+
+    points = []
+    for b in bonds:
+        y = b.get("yield")
+        d = b.get("modDuration")
+        tk = b.get("ticker") or b.get("localTicker", "")
+        if y is not None and d is not None and d > 0:
+            points.append({
+                "ticker": tk, "yield": float(y), "duration": float(d),
+                "price": b.get("price"), "change1D": b.get("change1D"),
+                "law": b.get("_law", ""),
+            })
+
+    if len(points) < 2:
+        return
+
+    fig = go.Figure()
+
+    laws = sorted(set(p.get("law", "") for p in points))
+    has_groups = len(laws) > 1
+
+    palette = {
+        "LEY NY": "#ff6600",
+        "LEY AR": "#00ff41",
+    }
+    fallback = ["#00ff41", "#ff6600", "#ffcc00", "#00bfff", "#cc66ff"]
+
+    if has_groups:
+        for idx, law_name in enumerate(laws):
+            law_pts = sorted(
+                [p for p in points if p.get("law", "") == law_name],
+                key=lambda p: p["duration"]
+            )
             if not law_pts:
                 continue
-            col = color_map[law_name]
+
+            col = palette.get(law_name, fallback[idx % len(fallback)])
+            durations = [p["duration"] for p in law_pts]
+            yields = [p["yield"] for p in law_pts]
+            tickers = [p["ticker"] for p in law_pts]
+
+            # Separate fitted curve per law
+            if len(law_pts) >= 2:
+                d_min = min(durations) * 0.85
+                d_max = max(durations) * 1.08
+                _fit_curve(durations, yields, (d_min, d_max), col, law_name, fig)
+
+            text_pos = _resolve_text_positions(law_pts)
+
             fig.add_trace(go.Scatter(
-                x=[p["duration"] for p in law_pts],
-                y=[p["yield"] for p in law_pts],
+                x=durations, y=yields,
                 mode="markers+text",
-                marker=dict(color=col, size=8, line=dict(color="#fff", width=0.5)),
-                text=[p["ticker"] for p in law_pts],
-                textposition="top center",
-                textfont=dict(size=8, color=col, family="Courier New"),
-                name=law_name if law_name else "—",
-                hovertemplate="<b>%{text}</b><br>Duration: %{x:.2f}<br>Yield: %{y:.2f}%<br><extra>" + law_name + "</extra>",
+                marker=dict(color=col, size=8, line=dict(color="#222", width=0.8)),
+                text=tickers,
+                textposition=text_pos,
+                textfont=dict(size=7, color=col, family="Courier New"),
+                name=law_name,
+                hovertemplate="<b>%{text}</b><br>Dur: %{x:.2f}<br>Yield: %{y:.2f}%<extra>" + law_name + "</extra>",
             ))
     else:
-        # Single color
+        points.sort(key=lambda p: p["duration"])
+        durations = [p["duration"] for p in points]
+        yields = [p["yield"] for p in points]
+        tickers = [p["ticker"] for p in points]
+
+        _fit_curve(durations, yields,
+                   (min(durations) * 0.85, max(durations) * 1.08),
+                   "#ff6600", "", fig)
+
+        text_pos = _resolve_text_positions(points)
+
         fig.add_trace(go.Scatter(
             x=durations, y=yields,
             mode="markers+text",
-            marker=dict(color="#00ff41", size=8, line=dict(color="#fff", width=0.5)),
+            marker=dict(color="#00ff41", size=8, line=dict(color="#222", width=0.8)),
             text=tickers,
-            textposition="top center",
-            textfont=dict(size=8, color="#00ff41", family="Courier New"),
+            textposition=text_pos,
+            textfont=dict(size=7, color="#00ff41", family="Courier New"),
             name="Bonos",
-            hovertemplate="<b>%{text}</b><br>Duration: %{x:.2f}<br>Yield: %{y:.2f}%<extra></extra>",
+            hovertemplate="<b>%{text}</b><br>Dur: %{x:.2f}<br>Yield: %{y:.2f}%<extra></extra>",
         ))
+
+    all_yields = [p["yield"] for p in points]
+    all_durs = [p["duration"] for p in points]
+    y_pad = (max(all_yields) - min(all_yields)) * 0.2 if max(all_yields) != min(all_yields) else 1
+    x_pad = (max(all_durs) - min(all_durs)) * 0.08 if max(all_durs) != min(all_durs) else 0.5
 
     fig.update_layout(
         paper_bgcolor="#000",
         plot_bgcolor="#000",
         font=dict(family="Courier New", size=9, color="#555"),
-        margin=dict(l=45, r=15, t=30, b=35),
+        margin=dict(l=45, r=15, t=35, b=40),
         height=height,
         title=dict(
             text=title,
@@ -148,40 +203,28 @@ def _yield_curve_chart(bonds, title="", height=320):
         ) if title else None,
         xaxis=dict(
             title=dict(text="DURATION", font=dict(size=8, color="#ff6600")),
-            gridcolor="#111",
-            linecolor="#333",
-            zerolinecolor="#333",
+            gridcolor="#111", linecolor="#333", zerolinecolor="#333",
             tickfont=dict(size=8, color="#555", family="Courier New"),
             showgrid=True,
-            gridwidth=1,
+            range=[min(all_durs) - x_pad, max(all_durs) + x_pad],
         ),
         yaxis=dict(
             title=dict(text="YIELD %", font=dict(size=8, color="#ff6600")),
-            gridcolor="#111",
-            linecolor="#333",
-            zerolinecolor="#333",
+            gridcolor="#111", linecolor="#333", zerolinecolor="#333",
             tickfont=dict(size=8, color="#555", family="Courier New"),
-            ticksuffix="%",
-            showgrid=True,
-            gridwidth=1,
+            ticksuffix="%", showgrid=True,
+            range=[min(all_yields) - y_pad, max(all_yields) + y_pad],
         ),
         legend=dict(
-            bgcolor="rgba(0,0,0,0)",
-            bordercolor="#333",
-            borderwidth=1,
-            font=dict(size=8, color="#ccc", family="Courier New"),
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="left",
-            x=0,
+            bgcolor="rgba(0,0,0,0.7)", bordercolor="#333", borderwidth=1,
+            font=dict(size=9, color="#ccc", family="Courier New"),
+            orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
         ),
         hoverlabel=dict(
-            bgcolor="#111",
-            bordercolor="#ff6600",
+            bgcolor="#111", bordercolor="#ff6600",
             font=dict(family="Courier New", size=9, color="#fff"),
         ),
-        showlegend=len(unique_laws) > 1 if 'unique_laws' in dir() else False,
+        showlegend=has_groups,
     )
 
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
@@ -222,30 +265,24 @@ def render():
     prov = boot.get("provincialSnapshot",{})
 
     with subtabs[0]:
-        # Tables
         all_sov_bonds = []
         for sec in sov.get("sections",[]):
             st.markdown(f'<div class="sh">{sec.get("label","")} · LEY {sec.get("law","")}</div>', unsafe_allow_html=True)
             _bonds(sec.get("bonds",[]))
-            # Collect bonds with law tag for chart
             law_label = f'LEY {sec.get("law", "")}' if sec.get("law") else sec.get("label", "")
             for b in sec.get("bonds", []):
                 b_copy = dict(b)
                 b_copy["_law"] = law_label
                 all_sov_bonds.append(b_copy)
         
-        # Yield vs Duration chart
-        st.markdown('<div style="margin-top:12px"></div>', unsafe_allow_html=True)
         _yield_curve_chart(all_sov_bonds, title="YIELD vs DURATION · SOBERANOS", height=340)
 
     with subtabs[1]:
         corp_bonds = corp.get("bonds", [])
         _bonds(corp_bonds)
-        st.markdown('<div style="margin-top:12px"></div>', unsafe_allow_html=True)
         _yield_curve_chart(corp_bonds, title="YIELD vs DURATION · CORPORATIVOS", height=340)
 
     with subtabs[2]:
         prov_bonds = prov.get("bonds", [])
         _bonds(prov_bonds)
-        st.markdown('<div style="margin-top:12px"></div>', unsafe_allow_html=True)
         _yield_curve_chart(prov_bonds, title="YIELD vs DURATION · PROVINCIALES", height=340)
