@@ -73,7 +73,7 @@ def render():
             paper_bgcolor="#000",
             plot_bgcolor="#000",
             font=dict(family="Courier New", size=9, color="#555"),
-            margin=dict(l=45, r=10, t=30, b=35),
+            margin=dict(l=50, r=20, t=30, b=35),
             height=300,
             showlegend=False,
             title=dict(
@@ -85,6 +85,7 @@ def render():
                 gridcolor="#111", linecolor="#333",
                 tickfont=dict(size=9, color="#ccc", family="Courier New"),
                 categoryorder="array", categoryarray=contracts,
+                range=[-0.6, len(contracts) - 0.4],
             ),
             yaxis=dict(
                 gridcolor="#111", linecolor="#333",
