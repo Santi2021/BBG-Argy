@@ -1,8 +1,8 @@
 """
 MUNDO — 9-Panel Grid (equity-focused)
   Row 1: ETFs Países | ETFs Sectores SPDR | ETFs Industrias
-  Row 2: Top #1-10 Market Cap | #11-20 | #21-30
-  Row 3: Top #31-40 | #41-50 | #51-60
+  Row 2: Stocks #1-13 | #14-26 | #27-39
+  Row 3: Stocks #40-52 | #53-65 | #66-78
 """
 import streamlit as st
 import yfinance as yf
@@ -168,37 +168,54 @@ def _yf_batch(tickers: list):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  SCRAPE TOP 60 COMPANIES BY MARKET CAP
+#  SCRAPE TOP 78 COMPANIES BY MARKET CAP
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# Hardcoded top 60 as fallback (tickers from companiesmarketcap.com, Feb 2026)
-TOP60_FALLBACK = [
+# Hardcoded top 78 as fallback (tickers from companiesmarketcap.com, Feb 2026)
+TOP78_FALLBACK = [
     ("NVDA", "NVIDIA"), ("AAPL", "Apple"), ("GOOG", "Alphabet"),
     ("MSFT", "Microsoft"), ("AMZN", "Amazon"), ("TSM", "TSMC"),
     ("META", "Meta"), ("AVGO", "Broadcom"), ("2222.SR", "Saudi Aramco"),
     ("TSLA", "Tesla"), ("BRK-B", "Berkshire H."), ("LLY", "Eli Lilly"),
-    ("JPM", "JPMorgan"), ("WMT", "Walmart"), ("TCEHY", "Tencent"),
+    ("JPM", "JPMorgan"),
+    # 14-26
+    ("WMT", "Walmart"), ("TCEHY", "Tencent"),
     ("V", "Visa"), ("005930.KS", "Samsung"), ("ORCL", "Oracle"),
     ("XOM", "Exxon Mobil"), ("MA", "Mastercard"), ("JNJ", "J&J"),
     ("ASML", "ASML"), ("BAC", "Bank of America"), ("HD", "Home Depot"),
     ("PG", "Procter&Gamble"), ("ABBV", "AbbVie"), ("COST", "Costco"),
+    # 27-39
     ("NFLX", "Netflix"), ("KO", "Coca-Cola"), ("CRM", "Salesforce"),
     ("SAP", "SAP"), ("BABA", "Alibaba"), ("AMD", "AMD"),
     ("MRK", "Merck"), ("NVO", "Novo Nordisk"), ("CVX", "Chevron"),
     ("PEP", "PepsiCo"), ("TMO", "Thermo Fisher"), ("SHEL", "Shell"),
-    ("LIN", "Linde"), ("WFC", "Wells Fargo"), ("CSCO", "Cisco"),
+    ("LIN", "Linde"),
+    # 40-52
+    ("WFC", "Wells Fargo"), ("CSCO", "Cisco"),
     ("ACN", "Accenture"), ("AZN", "AstraZeneca"), ("ADBE", "Adobe"),
     ("MCD", "McDonald's"), ("IBM", "IBM"), ("TXN", "Texas Inst."),
     ("GE", "GE Aerospace"), ("PM", "Philip Morris"), ("ISRG", "Intuitive Surg."),
-    ("ABT", "Abbott"), ("NOW", "ServiceNow"), ("QCOM", "Qualcomm"),
+    ("ABT", "Abbott"), ("NOW", "ServiceNow"),
+    # 53-65
+    ("QCOM", "Qualcomm"),
     ("DHR", "Danaher"), ("INTU", "Intuit"), ("AMGN", "Amgen"),
     ("DIS", "Disney"), ("CAT", "Caterpillar"), ("PDD", "PDD Holdings"),
+    ("AMAT", "Applied Mat."), ("UBER", "Uber"), ("GS", "Goldman Sachs"),
+    ("BX", "Blackstone"), ("AXP", "Amex"), ("T", "AT&T"),
+    # 66-78
+    ("LOW", "Lowe's"), ("MS", "Morgan Stanley"), ("SYK", "Stryker"),
+    ("BKNG", "Booking"), ("MDLZ", "Mondelez"), ("VRTX", "Vertex"),
+    ("BLK", "BlackRock"), ("PANW", "Palo Alto"), ("REGN", "Regeneron"),
+    ("GILD", "Gilead"), ("CB", "Chubb"), ("MMC", "Marsh McL."),
+    ("LRCX", "Lam Research"),
 ]
+
+COMPANIES_PER_PANEL = 13
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def _scrape_top60():
-    """Scrape top 60 companies from companiesmarketcap.com. Returns [(ticker, name, country), ...]"""
+def _scrape_top78():
+    """Scrape top 78 companies from companiesmarketcap.com. Returns [(ticker, name, country), ...]"""
     try:
         from bs4 import BeautifulSoup
         r = requests.get("https://companiesmarketcap.com/", headers=HEADERS, timeout=12)
@@ -211,12 +228,10 @@ def _scrape_top60():
             if len(cells) < 7:
                 continue
 
-            # Name cell: contains company name and ticker
             name_cell = cells[1]
             company_name = ""
             ticker = ""
 
-            # Ticker in small text or .company-code
             name_div = name_cell.find("div", class_="company-name")
             code_div = name_cell.find("div", class_="company-code")
 
@@ -226,35 +241,23 @@ def _scrape_top60():
                 ticker = code_div.get_text(strip=True)
 
             if not ticker:
-                # Try from link text
                 link = name_cell.find("a")
                 if link:
                     text = link.get_text(strip=True)
-                    # Pattern: "Company Name  TICKER"
                     parts = text.rsplit(None, 1)
                     if len(parts) >= 2:
                         company_name = parts[0].strip()
                         ticker = parts[1].strip()
 
-            # Country cell (last)
             country_cell = cells[-1]
             country = country_cell.get_text(strip=True)
 
-            # Price cell
-            price_cell = cells[3]
-            price_text = price_cell.get_text(strip=True).replace("$","").replace(",","")
-
-            # Change cell
-            chg_cell = cells[4]
-            chg_text = chg_cell.get_text(strip=True).replace("%","")
-
             if ticker and company_name:
-                # Shorten name
                 if len(company_name) > 16:
                     company_name = company_name[:14] + ".."
                 result.append((ticker, company_name, country))
 
-            if len(result) >= 60:
+            if len(result) >= 78:
                 break
 
         return result if len(result) >= 30 else None
@@ -262,13 +265,12 @@ def _scrape_top60():
         return None
 
 
-def _get_top60():
-    """Get top 60 companies — try scraping, fallback to hardcoded."""
-    scraped = _scrape_top60()
+def _get_top_companies():
+    """Get top companies — try scraping, fallback to hardcoded."""
+    scraped = _scrape_top78()
     if scraped:
         return scraped
-    # Fallback
-    return [(t, n, "") for t, n in TOP60_FALLBACK]
+    return [(t, n, "") for t, n in TOP78_FALLBACK]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -305,20 +307,16 @@ def _build_company_panel(companies, quotes, start_rank=1):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def render():
+    N = COMPANIES_PER_PANEL  # 13
+
     with st.spinner(""):
-        # Collect all tickers needed
         all_etf_tickers = list(COUNTRY_ETFS.keys()) + list(SECTOR_ETFS.keys()) + list(INDUSTRY_ETFS.keys())
 
-        # Get top 60 companies
-        top60 = _get_top60()
+        top = _get_top_companies()
 
-        # Filter out non-US tickers that yfinance may struggle with
-        # Keep all — yfinance handles most, missing ones just show "—"
-        company_tickers = [t[0] for t in top60]
+        company_tickers = [t[0] for t in top]
 
-        # Batch download all quotes
         all_tickers = all_etf_tickers + company_tickers
-        # Remove dupes while preserving order
         seen = set()
         unique_tickers = []
         for t in all_tickers:
@@ -328,17 +326,18 @@ def render():
 
         quotes = _yf_batch(unique_tickers)
 
-    # Build panels
+    # Build ETF panels
     r_countries = _build_etf_panel(COUNTRY_ETFS, quotes)
     r_sectors = _build_etf_panel(SECTOR_ETFS, quotes)
     r_industries = _build_etf_panel(INDUSTRY_ETFS, quotes)
 
-    r_co1 = _build_company_panel(top60[0:10], quotes, 1)
-    r_co2 = _build_company_panel(top60[10:20], quotes, 11)
-    r_co3 = _build_company_panel(top60[20:30], quotes, 21)
-    r_co4 = _build_company_panel(top60[30:40], quotes, 31)
-    r_co5 = _build_company_panel(top60[40:50], quotes, 41)
-    r_co6 = _build_company_panel(top60[50:60], quotes, 51)
+    # Build company panels — 13 per panel
+    r_co1 = _build_company_panel(top[0*N:1*N], quotes, 0*N + 1)
+    r_co2 = _build_company_panel(top[1*N:2*N], quotes, 1*N + 1)
+    r_co3 = _build_company_panel(top[2*N:3*N], quotes, 2*N + 1)
+    r_co4 = _build_company_panel(top[3*N:4*N], quotes, 3*N + 1)
+    r_co5 = _build_company_panel(top[4*N:5*N], quotes, 4*N + 1)
+    r_co6 = _build_company_panel(top[5*N:6*N], quotes, 5*N + 1)
 
     PH = 340
 
@@ -346,13 +345,13 @@ def render():
     p2 = _panel_html("SECTORES · SPDR", ["TICKER","PRECIO","% DIA","SECTOR"], r_sectors, PH)
     p3 = _panel_html("INDUSTRIAS · ETFs", ["TICKER","PRECIO","% DIA","INDUSTRIA"], r_industries, PH)
 
-    p4 = _panel_html("TOP MARKET CAP · #1-10", ["#","TICKER","NOMBRE","PRECIO","% DIA"], r_co1, PH)
-    p5 = _panel_html("TOP MARKET CAP · #11-20", ["#","TICKER","NOMBRE","PRECIO","% DIA"], r_co2, PH)
-    p6 = _panel_html("TOP MARKET CAP · #21-30", ["#","TICKER","NOMBRE","PRECIO","% DIA"], r_co3, PH)
+    p4 = _panel_html(f"STOCKS · #1-{N}", ["#","TICKER","NOMBRE","PRECIO","% DIA"], r_co1, PH)
+    p5 = _panel_html(f"STOCKS · #{N+1}-{2*N}", ["#","TICKER","NOMBRE","PRECIO","% DIA"], r_co2, PH)
+    p6 = _panel_html(f"STOCKS · #{2*N+1}-{3*N}", ["#","TICKER","NOMBRE","PRECIO","% DIA"], r_co3, PH)
 
-    p7 = _panel_html("TOP MARKET CAP · #31-40", ["#","TICKER","NOMBRE","PRECIO","% DIA"], r_co4, PH)
-    p8 = _panel_html("TOP MARKET CAP · #41-50", ["#","TICKER","NOMBRE","PRECIO","% DIA"], r_co5, PH)
-    p9 = _panel_html("TOP MARKET CAP · #51-60", ["#","TICKER","NOMBRE","PRECIO","% DIA"], r_co6, PH)
+    p7 = _panel_html(f"STOCKS · #{3*N+1}-{4*N}", ["#","TICKER","NOMBRE","PRECIO","% DIA"], r_co4, PH)
+    p8 = _panel_html(f"STOCKS · #{4*N+1}-{5*N}", ["#","TICKER","NOMBRE","PRECIO","% DIA"], r_co5, PH)
+    p9 = _panel_html(f"STOCKS · #{5*N+1}-{6*N}", ["#","TICKER","NOMBRE","PRECIO","% DIA"], r_co6, PH)
 
     grid_html = f"""
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;grid-template-rows:auto auto auto;gap:4px;margin-top:4px">
