@@ -7,6 +7,7 @@ Sources:
   - dolarapi.com      → tipos de cambio (blue, oficial, tarjeta…)
   - yfinance          → índices globales, commodities, sectores US
   - IOL               → cauciones (scraping)
+  - RSS feeds         → news ticker (Reuters, CNBC, FT, WSJ, Ámbito, etc.)
 """
 
 import streamlit as st
@@ -14,6 +15,8 @@ import requests
 import yfinance as yf
 import pandas as pd
 import re
+import feedparser
+from itertools import zip_longest
 from bs4 import BeautifulSoup
 
 HEADERS = {
@@ -29,13 +32,12 @@ TTL = 60  # seconds
 #  FIELD NORMALIZATION — data912 returns varying field names
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# Mapping of canonical field names → possible source field names
 FIELD_ALIASES = {
     "ticker":     ["ticker", "symbol", "especie", "Ticker", "Symbol", "Especie", "name", "s"],
     "last":       ["last", "price", "ultimo", "Last", "Price", "Ultimo", "c", "close", "px", "lastPrice", "last_price"],
     "bid":        ["bid", "Bid", "bid_price", "bidPrice", "b"],
     "ask":        ["ask", "Ask", "ask_price", "askPrice", "offer", "a"],
-    "pct_change": ["pct_change", "change_pct", "pctChange", "changePct", "variation", 
+    "pct_change": ["pct_change", "change_pct", "pctChange", "changePct", "variation",
                    "var", "change", "d", "percentChange", "percent_change", "pct"],
     "volume":     ["volume", "vol", "Volume", "Vol", "v", "totalVolume"],
     "mark":       ["mark", "Mark", "mid", "midPrice"],
@@ -47,30 +49,23 @@ FIELD_ALIASES = {
 
 
 def _normalize_item(item: dict) -> dict:
-    """Normalize a data912 item to canonical field names."""
     if not isinstance(item, dict):
         return item
-    
     normalized = {}
     used_keys = set()
-    
     for canonical, aliases in FIELD_ALIASES.items():
         for alias in aliases:
             if alias in item and alias not in used_keys:
                 normalized[canonical] = item[alias]
                 used_keys.add(alias)
                 break
-    
-    # Keep any extra fields not yet mapped
     for k, v in item.items():
         if k not in used_keys:
             normalized[k] = v
-    
     return normalized
 
 
 def _normalize_list(data: list) -> list:
-    """Normalize a list of data912 items."""
     if not data or not isinstance(data, list):
         return data
     return [_normalize_item(item) for item in data]
@@ -81,7 +76,6 @@ def _normalize_list(data: list) -> list:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _log_fields(endpoint: str, data):
-    """Store the raw field names for debugging."""
     if not hasattr(st, '_debug_fields'):
         st.session_state['_debug_fields'] = {}
     if data and isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict):
@@ -165,7 +159,6 @@ BASE912 = "https://data912.com/live"
 
 @st.cache_data(ttl=TTL, show_spinner=False)
 def get_912_raw(endpoint: str):
-    """Get raw data from data912 (before normalization)."""
     try:
         r = requests.get(f"{BASE912}/{endpoint}", headers=HEADERS, timeout=10)
         data = r.json()
@@ -176,7 +169,6 @@ def get_912_raw(endpoint: str):
 
 
 def get_912(endpoint: str):
-    """Get normalized data from data912."""
     raw = get_912_raw(endpoint)
     return _normalize_list(raw)
 
@@ -191,7 +183,6 @@ def get_adrs():         return get_912("usa_adrs")
 
 
 def get_debug_fields():
-    """Return debug info about API field names."""
     return st.session_state.get('_debug_fields', {})
 
 
@@ -203,49 +194,28 @@ IOL_CAUCIONES_URL = "https://iol.invertironline.com/mercado/cotizaciones/argenti
 
 @st.cache_data(ttl=TTL, show_spinner=False)
 def get_cauciones():
-    """
-    Scrape cauciones from IOL.
-    Returns list of dicts: {plazo, moneda, monto_contado, tasa, fecha}
-    """
     try:
         r = requests.get(IOL_CAUCIONES_URL, headers=HEADERS, timeout=12)
         r.encoding = "utf-8"
         soup = BeautifulSoup(r.text, "html.parser")
-        
         table = soup.find("table", {"id": "cotizaciones"})
         if not table:
             table = soup.find("table", class_=re.compile(r"cotizacion"))
         if not table:
             return []
-        
         tbody = table.find("tbody")
         if not tbody:
             return []
-        
-        # No role="row" — just plain <tr> inside tbody
         rows = tbody.find_all("tr")
         result = []
-        
         for row in rows:
             cells = row.find_all("td")
             if len(cells) < 7:
                 continue
-            
-            # Cell 0: Plazo (plain text number like "3", "7", "14")
             plazo = cells[0].get_text(strip=True)
-            
-            # Cell 1: Moneda ("PESOS" / "DOLARES")
             moneda = cells[1].get_text(strip=True)
-            
-            # Cell 2: Monto Contado
             monto_contado = cells[2].get_text(strip=True)
-            
-            # Cell 3: Monto Futuro
             monto_futuro = cells[3].get_text(strip=True)
-            
-            # Cell 4: Fecha Vencimiento (usually empty)
-            
-            # Cell 5: Tasa Tomadora — use data-order attribute (comma as decimal: "10,00")
             tasa_cell = cells[5]
             tasa_raw = tasa_cell.get("data-order") or tasa_cell.get_text(strip=True)
             tasa_str = str(tasa_raw).replace("%", "").replace(",", ".").replace(" ", "").strip()
@@ -253,10 +223,7 @@ def get_cauciones():
                 tasa = float(tasa_str)
             except (ValueError, TypeError):
                 tasa = 0.0
-            
-            # Cell 6: Fecha/Hora
             fecha = cells[6].get_text(strip=True) if len(cells) > 6 else ""
-            
             result.append({
                 "plazo": plazo,
                 "moneda": moneda,
@@ -265,55 +232,37 @@ def get_cauciones():
                 "tasa": tasa,
                 "fecha": fecha,
             })
-        
         return result
     except Exception as e:
         return []
 
 
 def get_cauciones_resumen():
-    """
-    Returns summarized cauciones: one row per plazo for PESOS,
-    showing the latest (highest) tasa tomadora.
-    Returns list of dicts: {plazo, tasa, volumen}
-    """
     data = get_cauciones()
     if not data:
         return []
-    
-    # Group by plazo, only PESOS
     pesos = [d for d in data if "PESOS" in d.get("moneda", "").upper()]
-    
-    # For each plazo, get the row with highest tasa
     by_plazo = {}
     for d in pesos:
         p = d["plazo"]
         if p not in by_plazo or d["tasa"] > by_plazo[p]["tasa"]:
             by_plazo[p] = d
-    
-    # Sort by plazo numerically
     def plazo_sort(item):
         try:
             return int(re.sub(r'\D', '', item["plazo"]))
         except:
             return 999
-    
     result = sorted(by_plazo.values(), key=plazo_sort)
     return result
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  US Rates — NY Fed (SOFR, EFFR, OBFR) + Treasury Yields (yfinance)
+#  US Rates — NY Fed (SOFR, EFFR, OBFR) + Treasury Yields + TIPS + BEI
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @st.cache_data(ttl=TTL, show_spinner=False)
 def get_us_rates():
-    """
-    Returns dict with SOFR, EFFR, OBFR from NY Fed + Treasury yields + TIPS + BEI from FRED.
-    """
     result = {}
-    
-    # NY Fed rates
     for rate_type, path in [("SOFR", "secured/sofr"), ("EFFR", "unsecured/effr"), ("OBFR", "unsecured/obfr")]:
         try:
             r = requests.get(
@@ -332,24 +281,14 @@ def get_us_rates():
                     }
         except Exception:
             pass
-    
-    # FRED CSV — Treasury yields, TIPS, Breakeven Inflation
-    # No API key needed for CSV endpoint
+
     fred_series = {
-        "UST_1M":   "DGS1MO",
-        "UST_3M":   "DGS3MO",
-        "UST_6M":   "DGS6MO",
-        "UST_1Y":   "DGS1",
-        "UST_2Y":   "DGS2",
-        "UST_5Y":   "DGS5",
-        "UST_10Y":  "DGS10",
-        "UST_30Y":  "DGS30",
-        "TIPS_5Y":  "DFII5",
-        "TIPS_10Y": "DFII10",
-        "BEI_5Y":   "T5YIE",
-        "BEI_10Y":  "T10YIE",
+        "UST_1M": "DGS1MO", "UST_3M": "DGS3MO", "UST_6M": "DGS6MO",
+        "UST_1Y": "DGS1", "UST_2Y": "DGS2", "UST_5Y": "DGS5",
+        "UST_10Y": "DGS10", "UST_30Y": "DGS30",
+        "TIPS_5Y": "DFII5", "TIPS_10Y": "DFII10",
+        "BEI_5Y": "T5YIE", "BEI_10Y": "T10YIE",
     }
-    
     for key, series_id in fred_series.items():
         try:
             r = requests.get(
@@ -368,7 +307,6 @@ def get_us_rates():
                             pass
         except Exception:
             pass
-    
     return result
 
 
@@ -396,62 +334,41 @@ def get_futuros_dolar():
     try:
         from io import StringIO
         tables = pd.read_html(StringIO(html), flavor="lxml")
-        
         best = None
         for df in tables:
-            # Skip MultiIndex tables — we want flat columns
             if isinstance(df.columns, pd.MultiIndex):
                 continue
-            
             cols_lower = [str(c).lower() for c in df.columns]
             flat = " ".join(cols_lower)
-            
-            # Must have TNA and Pase columns (the futuros dólar table)
             if "tna" not in flat or "pase" not in flat:
                 continue
-            
-            # Must have Especie column
             if not any("especie" in c for c in cols_lower):
                 continue
-            
-            # Should contain FEB/MAR/ABR style contract names
             df_clean = df.dropna(how="all")
             if len(df_clean) < 3:
                 continue
-            
             first_col = df_clean.iloc[:, 0].astype(str)
             has_contracts = first_col.str.match(r"[A-Z]{3}\d{2}", na=False).any()
             if not has_contracts:
                 continue
-            
-            # Prefer the smallest matching table (most specific)
             if best is None or len(df_clean) < len(best):
                 best = df_clean.copy()
-        
         if best is None:
             return pd.DataFrame()
-        
-        # Filter to only contract rows (FEB26, MAR26, etc.)
         best = best[best.iloc[:, 0].astype(str).str.match(r"[A-Z]{3}\d{2}", na=False)]
-        
-        # Normalize column names
         best.columns = ["Especie", "Último", "Var.Día", "TNA%", "Pase%"][:len(best.columns)]
-        
-        # TNA comes as "217" meaning 21.7%, convert
         def fix_tna(val):
             try:
                 v = float(str(val).replace(",", ".").replace("-", "").strip())
-                if v > 100:  # values like 217 mean 21.7%
+                if v > 100:
                     return round(v / 10, 1)
                 return v
             except:
                 return val
-        
         if "TNA%" in best.columns:
             best["TNA%"] = best["TNA%"].apply(fix_tna)
         if "Pase%" in best.columns:
             best["Pase%"] = best["Pase%"].apply(fix_tna)
-        
         return best.reset_index(drop=True)
     except Exception:
         return pd.DataFrame()
@@ -459,14 +376,12 @@ def get_futuros_dolar():
 
 @st.cache_data(ttl=TTL, show_spinner=False)
 def get_curva_rendimientos():
-    """Returns (data_cer, data_usd) as lists of [duration, yield, label]"""
     html = get_ecovalores_raw()
     if not html:
         return [], []
     try:
         m_cer = re.search(r'fut_data00\s*=\s*(\[\[.*?\]\])\s*;', html, re.DOTALL)
         m_usd = re.search(r'fut_data02\s*=\s*(\[\[.*?\]\])\s*;', html, re.DOTALL)
-
         def parse_js_array(match):
             if not match:
                 return []
@@ -475,7 +390,6 @@ def get_curva_rendimientos():
                 return json.loads(match.group(1))
             except Exception:
                 return []
-
         return parse_js_array(m_cer), parse_js_array(m_usd)
     except Exception:
         return [], []
@@ -483,7 +397,6 @@ def get_curva_rendimientos():
 
 @st.cache_data(ttl=TTL, show_spinner=False)
 def get_tasas_implicitas():
-    """Returns list of [days, tna_pct, label] for futures TNA curve"""
     html = get_ecovalores_raw()
     if not html:
         return []
@@ -499,7 +412,6 @@ def get_tasas_implicitas():
 
 @st.cache_data(ttl=TTL, show_spinner=False)
 def get_eco_bonos_ars():
-    """Bonos ARS (CER, tasa fija, dollar linked) from Ecovalores"""
     html = get_ecovalores_raw()
     if not html:
         return {}
@@ -533,70 +445,36 @@ def get_eco_bonos_ars():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 WORLD_TICKERS = {
-    "S&P 500":   "^GSPC",
-    "NASDAQ":    "^IXIC",
-    "DOW":       "^DJI",
-    "VIX":       "^VIX",
-    "DAX":       "^GDAXI",
-    "FTSE 100":  "^FTSE",
-    "NIKKEI":    "^N225",
-    "HANG SENG": "^HSI",
-    "MERVAL":    "^MERV",
-    "BOVESPA":   "^BVSP",
-    "IPC MEX":   "^MXX",
+    "S&P 500": "^GSPC", "NASDAQ": "^IXIC", "DOW": "^DJI", "VIX": "^VIX",
+    "DAX": "^GDAXI", "FTSE 100": "^FTSE", "NIKKEI": "^N225",
+    "HANG SENG": "^HSI", "MERVAL": "^MERV", "BOVESPA": "^BVSP", "IPC MEX": "^MXX",
 }
 
 COMMODITY_TICKERS = {
-    "GOLD":      "GC=F",
-    "SILVER":    "SI=F",
-    "WTI":       "CL=F",
-    "BRENT":     "BZ=F",
-    "NAT GAS":   "NG=F",
-    "COPPER":    "HG=F",
-    "SOJA":      "ZS=F",
-    "MAIZ":      "ZC=F",
-    "TRIGO":     "ZW=F",
+    "GOLD": "GC=F", "SILVER": "SI=F", "WTI": "CL=F", "BRENT": "BZ=F",
+    "NAT GAS": "NG=F", "COPPER": "HG=F", "SOJA": "ZS=F", "MAIZ": "ZC=F", "TRIGO": "ZW=F",
 }
 
 SECTOR_ETFS = {
-    "Tech":        "XLK",
-    "Financials":  "XLF",
-    "Health":      "XLV",
-    "Energy":      "XLE",
-    "Industrials": "XLI",
-    "ConsDisc":    "XLY",
-    "ConsStap":    "XLP",
-    "Materials":   "XLB",
-    "Utilities":   "XLU",
-    "RealEstate":  "XLRE",
-    "CommSvcs":    "XLC",
+    "Tech": "XLK", "Financials": "XLF", "Health": "XLV", "Energy": "XLE",
+    "Industrials": "XLI", "ConsDisc": "XLY", "ConsStap": "XLP",
+    "Materials": "XLB", "Utilities": "XLU", "RealEstate": "XLRE", "CommSvcs": "XLC",
 }
 
 FX_TICKERS = {
-    "EUR/USD": "EURUSD=X",
-    "USD/JPY": "JPY=X",
-    "GBP/USD": "GBPUSD=X",
-    "USD/BRL": "BRL=X",
-    "USD/MXN": "MXN=X",
-    "USD/CLP": "CLP=X",
-    "DXY":     "DX-Y.NYB",
+    "EUR/USD": "EURUSD=X", "USD/JPY": "JPY=X", "GBP/USD": "GBPUSD=X",
+    "USD/BRL": "BRL=X", "USD/MXN": "MXN=X", "USD/CLP": "CLP=X", "DXY": "DX-Y.NYB",
 }
 
 
 @st.cache_data(ttl=TTL, show_spinner=False)
 def get_yf_quotes(tickers_dict: dict):
-    """Batch download current quotes."""
     symbols = list(tickers_dict.values())
     names   = list(tickers_dict.keys())
     try:
         raw = yf.download(
-            symbols,
-            period="2d",
-            interval="1d",
-            group_by="ticker",
-            auto_adjust=True,
-            progress=False,
-            threads=True,
+            symbols, period="2d", interval="1d", group_by="ticker",
+            auto_adjust=True, progress=False, threads=True,
         )
         result = {}
         for name, sym in zip(names, symbols):
@@ -604,8 +482,6 @@ def get_yf_quotes(tickers_dict: dict):
                 if len(symbols) == 1:
                     closes = raw["Close"]
                 else:
-                    # yfinance >= 0.2.44 uses (ticker, field) order
-                    # Try both: raw[sym]["Close"] and raw["Close"][sym]
                     try:
                         closes = raw[sym]["Close"]
                     except (KeyError, TypeError):
@@ -657,8 +533,91 @@ def fmt_change(chg):
 
 
 def safe_get(item: dict, field: str, default="—"):
-    """Safely get a field value, returning default if None or missing."""
     val = item.get(field)
     if val is None:
         return default
     return val
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  NEWS TICKER — RSS feeds from multiple sources
+# ═══════════════════════════════════════════════════════════════════════════════
+
+NEWS_TTL = 300  # 5 min cache
+
+
+def _parse_feed(url, source_name, max_items=5):
+    try:
+        feed = feedparser.parse(url, request_headers=HEADERS)
+        results = []
+        for entry in feed.entries[:max_items]:
+            title = entry.get("title", "").strip()
+            link = entry.get("link", "")
+            if title:
+                results.append({"title": title, "link": link, "source": source_name})
+        return results
+    except Exception:
+        return []
+
+
+# ── International feeds ──
+
+@st.cache_data(ttl=NEWS_TTL, show_spinner=False)
+def _news_reuters():
+    return _parse_feed("https://news.google.com/rss/search?q=site:reuters.com+finance+OR+markets&hl=en&gl=US&ceid=US:en", "REUTERS")
+
+@st.cache_data(ttl=NEWS_TTL, show_spinner=False)
+def _news_cnbc():
+    return _parse_feed("https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114", "CNBC")
+
+@st.cache_data(ttl=NEWS_TTL, show_spinner=False)
+def _news_investing():
+    return _parse_feed("https://www.investing.com/rss/news.rss", "INVESTING")
+
+@st.cache_data(ttl=NEWS_TTL, show_spinner=False)
+def _news_ft():
+    return _parse_feed("https://news.google.com/rss/search?q=site:ft.com+markets+OR+finance&hl=en&gl=US&ceid=US:en", "FT")
+
+@st.cache_data(ttl=NEWS_TTL, show_spinner=False)
+def _news_wsj():
+    return _parse_feed("https://news.google.com/rss/search?q=site:wsj.com+markets+OR+economy&hl=en&gl=US&ceid=US:en", "WSJ")
+
+# ── Argentina feeds ──
+
+@st.cache_data(ttl=NEWS_TTL, show_spinner=False)
+def _news_ambito():
+    return _parse_feed("https://www.ambito.com/rss/economia.xml", "ÁMBITO")
+
+@st.cache_data(ttl=NEWS_TTL, show_spinner=False)
+def _news_infobae():
+    return _parse_feed("https://www.infobae.com/arc/outboundfeeds/rss/category/economia/", "INFOBAE")
+
+@st.cache_data(ttl=NEWS_TTL, show_spinner=False)
+def _news_cronista():
+    return _parse_feed("https://news.google.com/rss/search?q=site:cronista.com+mercados+OR+dolar&hl=es&gl=AR&ceid=AR:es", "CRONISTA")
+
+@st.cache_data(ttl=NEWS_TTL, show_spinner=False)
+def _news_bloomberglinea():
+    return _parse_feed("https://www.bloomberglinea.com/arc/outboundfeeds/rss/?outputType=xml", "BL LÍNEA")
+
+@st.cache_data(ttl=NEWS_TTL, show_spinner=False)
+def _news_iprofesional():
+    return _parse_feed("https://www.iprofesional.com/rss/finanzas", "iPROF")
+
+
+def _interleave(*lists):
+    result = []
+    for batch in zip_longest(*lists):
+        for item in batch:
+            if item:
+                result.append(item)
+    return result
+
+
+@st.cache_data(ttl=NEWS_TTL, show_spinner=False)
+def get_news_international():
+    return _interleave(_news_reuters(), _news_cnbc(), _news_ft(), _news_investing(), _news_wsj())
+
+@st.cache_data(ttl=NEWS_TTL, show_spinner=False)
+def get_news_argentina():
+    return _interleave(_news_ambito(), _news_bloomberglinea(), _news_infobae(), _news_cronista(), _news_iprofesional())
