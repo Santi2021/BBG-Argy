@@ -52,14 +52,18 @@ def render():
     if contracts and tna_vals:
         fig = go.Figure()
 
-        fig.add_trace(go.Bar(
+        fig.add_trace(go.Scatter(
             x=contracts,
             y=tna_vals,
-            marker_color="#ff6600",
+            mode="lines+markers+text",
+            line=dict(color="#ff6600", width=2),
+            marker=dict(color="#ff6600", size=7, line=dict(color="#222", width=0.8)),
             text=[f"{v:.1f}%" for v in tna_vals],
-            textposition="outside",
+            textposition="top center",
             textfont=dict(size=8, family="Courier New", color="#ff6600"),
             hovertemplate="<b>%{x}</b><br>TNA: %{y:.1f}%<extra></extra>",
+            fill="tozeroy",
+            fillcolor="rgba(255,102,0,0.08)",
         ))
 
         y_max = max(tna_vals) * 1.15
