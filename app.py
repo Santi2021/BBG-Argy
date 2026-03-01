@@ -262,7 +262,7 @@ st.markdown(f"""
 
 from tabs import overview, argentina, bonos, futuros, mundo, watchlist
 
-tabs = st.tabs(["OVERVIEW", "🇦🇷 ARGENTINA", "BONOS", "FUTUROS", "MUNDO", "📈 GRAFICADORA"])
+tabs = st.tabs(["OVERVIEW", "🇦🇷 ARGENTINA", "BONOS", "FUTUROS", "MUNDO", "GRAFICADORA"])
 
 with tabs[0]: overview.render()
 with tabs[1]: argentina.render()
@@ -271,4 +271,4 @@ with tabs[3]: futuros.render()
 with tabs[4]: mundo.render()
 with tabs[5]: watchlist.render()
 
-st.markdown('<div class="ft">SOLO FINES INFORMATIVOS — NO CONSTITUYE ASESORAMIENTO FINANCIERO</div>', unsafe_allow_html=True)
+st.markdown('<div class="ft">MARKET DATA — ALL RIGHTS RESERVED</div>', unsafe_allow_html=True)
