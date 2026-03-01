@@ -8,7 +8,7 @@ import streamlit.components.v1 as components
 DEFAULT_SYMBOL = "BCBA:GGAL"
 
 
-def _tv_widget_html(symbol, height=640):
+def _tv_widget_html(symbol, height=700):
     return f"""
     <div class="tradingview-widget-container" style="height:{height}px;width:100%">
       <div id="tradingview_chart" style="height:100%;width:100%"></div>
@@ -44,15 +44,4 @@ def _tv_widget_html(symbol, height=640):
 
 
 def render():
-    st.markdown('<div style="font-size:8px;color:#555;letter-spacing:1px;text-transform:uppercase;margin-bottom:2px">SÍMBOLO · Ej: AAPL, BCBA:GGAL, BINANCE:BTCUSDT, TVC:GOLD, FX:EURUSD</div>', unsafe_allow_html=True)
-    symbol = st.text_input("SYM", value=DEFAULT_SYMBOL, label_visibility="collapsed")
-    symbol = symbol.strip().upper() if symbol else DEFAULT_SYMBOL
-
-    components.html(_tv_widget_html(symbol, height=640), height=650, scrolling=False)
-
-    st.markdown(
-        '<div style="color:#333;font-size:8px;text-align:center;margin-top:2px;letter-spacing:1px">'
-        'CHART BY TRADINGVIEW · CAMBIAR SÍMBOLO, TIMEFRAME, INDICADORES Y ESCALA DESDE EL GRÁFICO'
-        '</div>',
-        unsafe_allow_html=True
-    )
+    components.html(_tv_widget_html(DEFAULT_SYMBOL, height=700), height=710, scrolling=False)
