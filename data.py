@@ -2,7 +2,8 @@
 Centralized data fetching — all sources, cached at 60s.
 Sources:
   - data912 (Milton)  → acciones, CEDEARs, MEP/CCL, bonos ARS
-  - BondTerminal      → bonos USD soberanos/corp/prov, riesgo país
+  - BondTerminal      → bonos USD soberanos/corp/prov
+  - ArgentinaDatos    → riesgo país EMBI (JP Morgan)
   - Ecovalores        → futuros dólar, curva rendimientos, bonos ARS
   - dolarapi.com      → tipos de cambio (blue, oficial, tarjeta…)
   - yfinance          → índices globales, commodities, sectores US
@@ -121,23 +122,130 @@ def get_bondterminal_bootstrap():
         return {"error": str(e)}
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Riesgo País — EMBI JP Morgan (multi-source)
+# ═══════════════════════════════════════════════════════════════════════════════
+
 @st.cache_data(ttl=TTL, show_spinner=False)
 def get_riesgo_pais():
+    """
+    Riesgo País EMBI (JP Morgan) — multi-source:
+      1. ArgentinaDatos API (primary — real EMBI value)
+      2. Ámbito historical API (fallback)
+      3. BondTerminal (last resort — note: returns weighted spread, not EMBI)
+    """
+    result = {
+        "bps": "—", "bps_ambito": "—",
+        "delta_1d": 0, "delta_1w": 0, "delta_1m": 0,
+        "data_quality": "", "as_of": "",
+    }
+
+    # ── Source 1: ArgentinaDatos API (real EMBI) ──
+    try:
+        r = requests.get(
+            "https://api.argentinadatos.com/v1/finanzas/indices/riesgo-pais",
+            headers=HEADERS, timeout=10
+        )
+        if r.status_code == 200:
+            data = r.json()
+            if data and isinstance(data, list) and len(data) > 0:
+                # Data: [{fecha: "YYYY-MM-DD", valor: N}, ...] sorted by date asc
+                latest = data[-1]
+                bps = latest.get("valor")
+                if bps is not None:
+                    result["bps"] = round(bps)
+                    result["as_of"] = latest.get("fecha", "")
+                    result["data_quality"] = "argentinadatos"
+                    result["bps_ambito"] = round(bps)
+
+                    # 1 day delta
+                    if len(data) >= 2:
+                        prev = data[-2].get("valor")
+                        if prev is not None:
+                            result["delta_1d"] = round(bps - prev, 1)
+
+                    # 1 week delta (~5 trading days)
+                    if len(data) >= 6:
+                        prev_w = data[-6].get("valor")
+                        if prev_w is not None:
+                            result["delta_1w"] = round(bps - prev_w, 1)
+
+                    # 1 month delta (~22 trading days)
+                    if len(data) >= 23:
+                        prev_m = data[-23].get("valor")
+                        if prev_m is not None:
+                            result["delta_1m"] = round(bps - prev_m, 1)
+
+                    return result
+    except Exception:
+        pass
+
+    # ── Source 2: Ámbito historical API ──
+    try:
+        r = requests.get(
+            "https://mercados.ambito.com/riesgo-pais/historico-general",
+            headers=HEADERS, timeout=10
+        )
+        if r.status_code == 200:
+            data = r.json()
+            if data and isinstance(data, list) and len(data) > 1:
+                # First row is headers, rest is data (most recent first)
+                latest_row = data[1] if len(data) > 1 else None
+                if latest_row and len(latest_row) >= 2:
+                    bps_str = str(latest_row[1]).replace(".", "").replace(",", ".").strip()
+                    try:
+                        bps = float(bps_str)
+                        result["bps"] = round(bps)
+                        result["bps_ambito"] = round(bps)
+                        result["data_quality"] = "ambito"
+
+                        if len(data) > 2:
+                            try:
+                                prev_str = str(data[2][1]).replace(".", "").replace(",", ".").strip()
+                                result["delta_1d"] = round(bps - float(prev_str), 1)
+                            except Exception:
+                                pass
+                        if len(data) > 6:
+                            try:
+                                prev_w_str = str(data[6][1]).replace(".", "").replace(",", ".").strip()
+                                result["delta_1w"] = round(bps - float(prev_w_str), 1)
+                            except Exception:
+                                pass
+                        if len(data) > 23:
+                            try:
+                                prev_m_str = str(data[23][1]).replace(".", "").replace(",", ".").strip()
+                                result["delta_1m"] = round(bps - float(prev_m_str), 1)
+                            except Exception:
+                                pass
+
+                        return result
+                    except (ValueError, TypeError):
+                        pass
+    except Exception:
+        pass
+
+    # ── Source 3: BondTerminal (last resort) ──
     try:
         r = requests.get("https://bondterminal.com/api/riesgo-pais",
                          headers=HEADERS, timeout=8)
         d = r.json()
-        return {
-            "bps": round(d.get("weightedSpreadBps", 0)),
-            "bps_ambito": d.get("ambitoValue"),
-            "delta_1d": round(d.get("deltas", {}).get("oneDay", 0), 1),
-            "delta_1w": round(d.get("deltas", {}).get("oneWeek", 0), 1),
-            "delta_1m": round(d.get("deltas", {}).get("oneMonth", 0), 1),
-            "data_quality": d.get("dataQuality", ""),
-            "as_of": d.get("asOf", ""),
-        }
+        # Note: weightedSpreadBps != EMBI, but better than nothing
+        # Use ambitoValue if available (BT scrapes it too)
+        ambito_val = d.get("ambitoValue")
+        if ambito_val is not None:
+            result["bps"] = round(float(ambito_val))
+        else:
+            result["bps"] = round(d.get("weightedSpreadBps", 0))
+        result["bps_ambito"] = d.get("ambitoValue", result["bps"])
+        result["delta_1d"] = round(d.get("deltas", {}).get("oneDay", 0), 1)
+        result["delta_1w"] = round(d.get("deltas", {}).get("oneWeek", 0), 1)
+        result["delta_1m"] = round(d.get("deltas", {}).get("oneMonth", 0), 1)
+        result["data_quality"] = "bondterminal"
+        result["as_of"] = d.get("asOf", "")
     except Exception as e:
-        return {"error": str(e)}
+        result["data_quality"] = f"error: {e}"
+
+    return result
 
 
 @st.cache_data(ttl=TTL, show_spinner=False)
