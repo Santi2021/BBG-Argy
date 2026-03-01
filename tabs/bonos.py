@@ -104,12 +104,15 @@ def _yield_curve_chart(bonds, title="", height=340):
     if not bonds:
         return
 
+    # Collect valid points, then filter outliers that distort the curve
+    OUTLIER_TICKERS = {"MR39D"}  # GEMSA — extreme yield breaks scale
+    
     points = []
     for b in bonds:
         y = b.get("yield")
         d = b.get("modDuration")
         tk = b.get("ticker") or b.get("localTicker", "")
-        if y is not None and d is not None and d > 0:
+        if y is not None and d is not None and d > 0 and tk not in OUTLIER_TICKERS:
             points.append({
                 "ticker": tk, "yield": float(y), "duration": float(d),
                 "price": b.get("price"), "change1D": b.get("change1D"),
