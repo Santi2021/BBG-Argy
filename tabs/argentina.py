@@ -241,33 +241,35 @@ def _build_heatmap(quotes):
     if not sector_data:
         return None
 
-    # Build flat arrays — root level sectors with "total" branchvalues
-    total_market_monto = sum(s["total_monto"] for s in sector_data.values())
-
     # We use sqrt(monto) for treemap sizing to compress the scale —
     # otherwise YPF/GGAL dominate and smaller companies are invisible.
-    # The color and hover still show real values.
+    # With branchvalues="total", parent value MUST equal sum of children exactly.
     import math
+    total_market_monto = sum(s["total_monto"] for s in sector_data.values())
 
     def _compress(v):
-        """sqrt transform to compress size differences while preserving order."""
         return math.sqrt(max(v, 0))
 
+    # First pass: compute compressed sector values (= sum of compressed children)
+    sector_compressed_vals = {}
+    for sector_name, sdata in sector_data.items():
+        sector_compressed_vals[sector_name] = sum(_compress(m) for _, _, _, m in sdata["children"])
+
+    # Root = sum of all sector compressed values
+    root_val = sum(sector_compressed_vals.values())
+
     # Root
-    root_compressed = sum(_compress(s["total_monto"]) for s in sector_data.values())
     labels.append("EQUITY ARG")
     parents.append("")
-    values.append(root_compressed)
+    values.append(root_val)
     colors.append(0)
     text_lines.append("")
     hover_texts.append(f"Monto total: {_vol_fmt(total_market_monto)}")
 
     for sector_name, sdata in sector_data.items():
-        # Sector node — compressed value = sum of compressed children
-        sector_compressed = sum(_compress(m) for _, _, _, m in sdata["children"])
         labels.append(sector_name)
         parents.append("EQUITY ARG")
-        values.append(sector_compressed)
+        values.append(sector_compressed_vals[sector_name])
         colors.append(sdata["avg_chg"])
         text_lines.append(f"<b>{sector_name}</b><br>{sdata['avg_chg']:+.2f}%")
         hover_texts.append(
@@ -277,7 +279,6 @@ def _build_heatmap(quotes):
             f"Empresas: {len(sdata['children'])}"
         )
 
-        # Company nodes
         for t, price, chg, monto in sdata["children"]:
             p_str = f"${price:,.0f}" if price >= 100 else f"${price:,.2f}"
             labels.append(t)
