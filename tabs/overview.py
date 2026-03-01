@@ -1,9 +1,9 @@
 """
 OVERVIEW — Markets Terminal 3x3 Grid
-9 equal panels:
+9 equal panels (KPI strip moved to app.py as news ticker):
   Row 1: Cauciones | Futuros Dólar | Letras ARS
-  Row 2: Bonos Soberanos | Acciones ARG | ADRs ARG
-  Row 3: Materias Primas | Divisas | Criptomonedas
+  Row 2: Bonos Soberanos | Corporativos | US Rates
+  Row 3: Acciones ARG | ADRs ARG | Commodities & Crypto
 """
 import streamlit as st
 import sys, os
@@ -17,12 +17,7 @@ from data import (
 )
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-#  HELPERS
-# ═══════════════════════════════════════════════════════════════════════════════
-
 def _pct_html(val):
-    """Colored %change text."""
     if val is None or val == "—":
         return '<span style="color:#555">—</span>'
     try:
@@ -35,7 +30,6 @@ def _pct_html(val):
 
 
 def _chg_html(val):
-    """Colored change with arrow."""
     if val is None or val == "—":
         return '<span style="color:#555">—</span>'
     try:
@@ -49,7 +43,6 @@ def _chg_html(val):
 
 
 def _panel_html(title, headers, rows_html, max_height=320):
-    """Build a complete panel with title bar and scrollable table with sticky header."""
     ths = "".join(f"<th>{h}</th>" for h in headers)
     return f"""<div style="border:1px solid #333;background:#000;height:{max_height}px;display:flex;flex-direction:column;overflow:hidden">
   <div style="background:#111;color:#ff6600;font-size:9px;font-weight:bold;letter-spacing:2px;text-transform:uppercase;padding:3px 8px;border-bottom:1px solid #ff6600;flex-shrink:0">{title}</div>
@@ -62,14 +55,8 @@ def _panel_html(title, headers, rows_html, max_height=320):
 </div>"""
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-#  PANEL BUILDERS — each returns rows HTML
-# ═══════════════════════════════════════════════════════════════════════════════
-
 def _build_acciones():
     acc = get_acciones()
-    rows = ""
-    # Only Merval panel stocks (no "D" duplicates)
     MERVAL = [
         "ALUA", "BBAR", "BMA", "BYMA", "CEPU", "COME", "CRES", "EDN",
         "GGAL", "LOMA", "METR", "PAMP", "SUPV", "TECO2", "TGNO4",
@@ -80,7 +67,7 @@ def _build_acciones():
         tk = item.get("ticker", "")
         if tk in MERVAL:
             by_ticker[tk] = item
-    
+    rows = ""
     for tk in MERVAL:
         item = by_ticker.get(tk)
         if item:
@@ -95,8 +82,6 @@ def _build_acciones():
 
 def _build_adrs():
     adrs = get_adrs()
-    rows = ""
-    # Argentine ADRs only, in order
     ARG_ADRS = [
         "YPF", "GGAL", "BBAR", "BMA", "SUPV", "PAM",
         "LOMA", "CEPU", "TEO", "TGS", "EDN", "CRESY", "IRS",
@@ -106,7 +91,7 @@ def _build_adrs():
         tk = item.get("ticker", "")
         if tk in ARG_ADRS:
             by_ticker[tk] = item
-    
+    rows = ""
     for tk in ARG_ADRS:
         item = by_ticker.get(tk)
         if item:
@@ -126,11 +111,7 @@ def _build_commodities():
         p = q.get("price")
         chg = q.get("change_pct", 0)
         rows += f'<tr><td>{name}</td><td class="mkt">CMX</td><td style="color:#ffcc00">{fmt_price(p, 2)}</td><td>{_chg_html(chg)}</td><td>{_pct_html(chg)}</td></tr>'
-    
-    # Separator
     rows += '<tr><td colspan="5" style="border-bottom:1px solid #333;padding:1px"></td></tr>'
-    
-    # Crypto
     crypto_map = {"BTC": "BTC-USD", "ETH": "ETH-USD", "SOL": "SOL-USD"}
     crypto = get_yf_quotes(crypto_map)
     for name, q in crypto.items():
@@ -146,7 +127,6 @@ def _build_corporativos():
     if isinstance(boot, dict) and "error" not in boot:
         corp = boot.get("corporateSnapshot", {})
         bonds = corp.get("bonds", [])
-        # Sort by modDuration ascending (short to long)
         bonds_sorted = sorted(bonds, key=lambda b: b.get("modDuration") or 999)
         for b in bonds_sorted:
             tk = b.get("ticker") or b.get("localTicker", "")
@@ -161,32 +141,23 @@ def _build_corporativos():
 def _build_us_rates():
     rates = get_us_rates()
     rows = ""
-    
     def _rate_html(key, color="#00ff41", decimals=2):
         data = rates.get(key, {})
         rate = data.get("rate")
         if rate is not None:
             return f'<span style="color:{color};font-weight:bold">{rate:.{decimals}f}%</span>'
         return '<span style="color:#555">—</span>'
-    
-    # Fed overnight rates
     for label, key in [("SOFR", "SOFR"), ("EFFR", "EFFR"), ("OBFR", "OBFR")]:
         data = rates.get(key, {})
         target_from = data.get("target_from")
         target_to = data.get("target_to")
         target_s = f'{target_from:.2f}-{target_to:.2f}%' if target_from and target_to else ""
         rows += f'<tr><td>{label}</td><td>{_rate_html(key)}</td><td style="color:#555;font-size:9px">{target_s}</td></tr>'
-    
-    # Separator
     rows += '<tr><td colspan="3" style="border-bottom:1px solid #333;padding:1px"></td></tr>'
-    
-    # Full Treasury curve
     for label, key in [("UST 1M","UST_1M"), ("UST 3M","UST_3M"), ("UST 6M","UST_6M"),
                        ("UST 1Y","UST_1Y"), ("UST 2Y","UST_2Y"), ("UST 5Y","UST_5Y"),
                        ("UST 10Y","UST_10Y"), ("UST 30Y","UST_30Y")]:
         rows += f'<tr><td>{label}</td><td>{_rate_html(key, "#ffcc00")}</td><td></td></tr>'
-    
-    # 10Y-2Y Spread
     ust10 = rates.get("UST_10Y", {}).get("rate")
     ust2 = rates.get("UST_2Y", {}).get("rate")
     if ust10 is not None and ust2 is not None:
@@ -196,16 +167,11 @@ def _build_us_rates():
     else:
         spr_s = '<span style="color:#555">—</span>'
     rows += f'<tr><td>10Y-2Y SPR</td><td>{spr_s}</td><td></td></tr>'
-    
-    # Separator
     rows += '<tr><td colspan="3" style="border-bottom:1px solid #333;padding:1px"></td></tr>'
-    
-    # TIPS + Breakeven
     rows += f'<tr><td>TIPS 5Y</td><td>{_rate_html("TIPS_5Y", "#ff6600")}</td><td></td></tr>'
     rows += f'<tr><td>TIPS 10Y</td><td>{_rate_html("TIPS_10Y", "#ff6600")}</td><td></td></tr>'
     rows += f'<tr><td>BEI 5Y</td><td>{_rate_html("BEI_5Y", "#ff6600")}</td><td style="color:#555;font-size:9px">breakeven</td></tr>'
     rows += f'<tr><td>BEI 10Y</td><td>{_rate_html("BEI_10Y", "#ff6600")}</td><td style="color:#555;font-size:9px">breakeven</td></tr>'
-    
     return rows
 
 
@@ -227,25 +193,21 @@ def _build_bonos():
 
 def _build_letras():
     letras = get_letras()
-    bonos = get_bonos_ars()  # Some "letras" are classified as bonds in data912
-    rows = ""
-    # Only these tickers, in duration order
+    bonos = get_bonos_ars()
     LETRAS_ORDER = [
         "S16M6", "S17A6", "S30A6", "S29Y6", "T30J6", "S31L6",
         "S31G6", "S30O6", "S30N6", "T15E7", "T30A7", "T31Y7", "T30J7",
     ]
-    # Build lookup by ticker from both sources
     by_ticker = {}
     for item in (bonos or []):
         tk = item.get("ticker", "")
         if tk in LETRAS_ORDER:
             by_ticker[tk] = item
-    # Notes override bonds (more specific)
     for item in (letras or []):
         tk = item.get("ticker", "")
         if tk in LETRAS_ORDER:
             by_ticker[tk] = item
-    
+    rows = ""
     for tk in LETRAS_ORDER:
         item = by_ticker.get(tk)
         if item:
@@ -273,7 +235,6 @@ def _build_cauciones():
                 tasa_s = '<span style="color:#555">—</span>'
             rows += f'<tr><td>{plazo} DÍAS</td><td>{tasa_s}</td><td style="color:#555;font-size:9px">{monto}</td></tr>'
     else:
-        # Fallback if scraping fails
         for plazo in ["1","3","7","14","30","60","90"]:
             rows += f'<tr><td>{plazo} DÍAS</td><td style="color:#555">—</td><td style="color:#555">—</td></tr>'
     return rows
@@ -296,50 +257,7 @@ def _build_futuros():
     return rows
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-#  RENDER
-# ═══════════════════════════════════════════════════════════════════════════════
-
 def render():
-    # ── KPI Strip ──
-    rp = get_riesgo_pais()
-    dol = get_dolar()
-    if isinstance(rp, dict) and "error" in rp:
-        rp = {"bps": "—", "delta_1d": 0}
-    if isinstance(dol, dict) and "error" in dol:
-        dol = {}
-
-    bps = rp.get("bps", "—")
-    d1d = rp.get("delta_1d", 0)
-    d1d_c = "#00ff41" if d1d and d1d > 0 else ("#ff3b3b" if d1d and d1d < 0 else "#555")
-    d1d_s = f"+{d1d}" if d1d and d1d >= 0 else str(d1d or 0)
-
-    def _fxv(k):
-        v = dol.get(k, {}).get("venta")
-        return f"{v:,.2f}" if v else "—"
-    def _fxc(k):
-        v = dol.get(k, {}).get("compra")
-        return f"C {v:,.2f}" if v else ""
-    
-    of_v = dol.get("oficial", {}).get("venta")
-    bl_v = dol.get("blue", {}).get("venta")
-    brecha = ""
-    if of_v and bl_v:
-        brecha = f'brecha {(bl_v - of_v) / of_v * 100:.1f}%'
-
-    st.markdown(f"""
-    <div class="kpi-strip">
-      <div class="kpi-item"><div class="kpi-label">RIESGO PAÍS</div><div class="kpi-value">{bps} <span style="font-size:9px;color:#555">bps</span></div><div class="kpi-sub" style="color:{d1d_c}">{d1d_s} hoy</div></div>
-      <div class="kpi-item"><div class="kpi-label">OFICIAL</div><div class="kpi-value">{_fxv("oficial")}</div><div class="kpi-sub flat">{_fxc("oficial")}</div></div>
-      <div class="kpi-item"><div class="kpi-label">BLUE</div><div class="kpi-value">{_fxv("blue")}</div><div class="kpi-sub" style="color:#ff6600;font-size:8px">{brecha}</div></div>
-      <div class="kpi-item"><div class="kpi-label">MEP</div><div class="kpi-value">{_fxv("bolsa")}</div><div class="kpi-sub flat">{_fxc("bolsa")}</div></div>
-      <div class="kpi-item"><div class="kpi-label">CCL</div><div class="kpi-value">{_fxv("contadoconliqui")}</div><div class="kpi-sub flat">{_fxc("contadoconliqui")}</div></div>
-      <div class="kpi-item"><div class="kpi-label">MAYORISTA</div><div class="kpi-value">{_fxv("mayorista")}</div></div>
-      <div class="kpi-item"><div class="kpi-label">TARJETA</div><div class="kpi-value">{_fxv("tarjeta")}</div></div>
-      <div class="kpi-item"><div class="kpi-label">CRIPTO</div><div class="kpi-value">{_fxv("cripto")}</div></div>
-    </div>""", unsafe_allow_html=True)
-
-    # ── Fetch all data ──
     with st.spinner(""):
         r_acc = _build_acciones()
         r_adr = _build_adrs()
@@ -351,20 +269,16 @@ def render():
         r_cau = _build_cauciones()
         r_fut = _build_futuros()
 
-    # ── 3x3 GRID — New order ──
-    PH = 340  # panel height in px
+    PH = 340
 
-    # Row 1: Cauciones | Futuros Dólar | Letras ARS
     p1 = _panel_html("CAUCIONES", ["PLAZO","TNA","VOLUMEN"], r_cau, PH)
     p2 = _panel_html("FUTUROS DÓLAR", ["CONTRATO","ÚLTIMO","TNA"], r_fut, PH)
     p3 = _panel_html("LETRAS EN ARS", ["TICKER","MKT","PRECIO","% DIA"], r_let, PH)
 
-    # Row 2: Bonos Soberanos | Corporativos | Curva US + SOFR
     p4 = _panel_html("BONOS SOBERANOS", ["BONO","PRECIO","Δ DIA","YIELD","DUR"], r_bon, PH)
     p5 = _panel_html("CORPORATIVOS", ["BONO","PRECIO","Δ DIA","YIELD","DUR"], r_corp, PH)
     p6 = _panel_html("US RATES · SOFR · TREASURY", ["RATE","VALOR","TARGET"], r_usr, PH)
 
-    # Row 3: Acciones ARG | ADRs | Materias Primas
     p7 = _panel_html("ACCIONES ARG", ["TICKER","MKT","PRECIO","% DIA"], r_acc, PH)
     p8 = _panel_html("ADRs ARGENTINOS", ["ADR","MKT","PRECIO","% DIA"], r_adr, PH)
     p9 = _panel_html("COMMODITIES & CRYPTO", ["NOMBRE","MKT","PRECIO","CAMBIO","% DIA"], r_com, PH)
