@@ -1,48 +1,106 @@
+"""
+GRAFICADORA — TradingView Advanced Chart Widget
+Replaces the old Watchlist tab with a full-featured charting tool.
+"""
 import streamlit as st
-import plotly.graph_objects as go
-import yfinance as yf
-import sys, os
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from data import fmt_price, fmt_change
+import streamlit.components.v1 as components
 
-DEFAULT = ["MELI","NU","GGAL","YPF","BMA","NVDA","AAPL","MSFT","GOOGL","AMZN","GC=F","BTC-USD"]
 
-@st.cache_data(ttl=60, show_spinner=False)
-def _hist(ticker, period="1mo"):
-    try: return yf.Ticker(ticker).history(period=period, interval="1d", auto_adjust=True)["Close"].dropna()
-    except: return None
+DEFAULT_SYMBOL = "BCBA:GGAL"
 
-def _spark(closes, color):
-    if closes is None or len(closes) < 2: return None
-    fig = go.Figure(go.Scatter(y=closes.tolist(), mode="lines", line=dict(color=color,width=1.2), hoverinfo="skip"))
-    fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        margin=dict(l=0,r=0,t=0,b=0), xaxis=dict(visible=False), yaxis=dict(visible=False),
-        height=36, showlegend=False)
-    return fig
+# Preset symbol groups for quick access
+PRESETS = {
+    "ARG Acciones": ["BCBA:GGAL", "BCBA:YPF", "BCBA:BBAR", "BCBA:BMA", "BCBA:SUPV", "BCBA:PAMP", "BCBA:TECO2", "BCBA:ALUA", "BCBA:TXAR", "BCBA:CEPU"],
+    "ADRs": ["GGAL", "YPF", "BBAR", "BMA", "SUPV", "PAM", "TEO", "TGS", "LOMA", "CEPU", "CRESY", "EDN"],
+    "CEDEARs": ["BCBA:MELI", "BCBA:NVDA", "BCBA:AAPL", "BCBA:MSFT", "BCBA:GOOGL", "BCBA:AMZN", "BCBA:META", "BCBA:TSLA"],
+    "US Tech": ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "AVGO", "ORCL", "AMD"],
+    "Commodities": ["TVC:GOLD", "TVC:SILVER", "NYMEX:CL1!", "NYMEX:NG1!", "CBOT:ZS1!", "CBOT:ZC1!", "CBOT:ZW1!"],
+    "Crypto": ["BINANCE:BTCUSDT", "BINANCE:ETHUSDT", "BINANCE:SOLUSDT"],
+    "FX": ["FX:EURUSD", "FX:USDJPY", "FX:GBPUSD", "FX_IDC:USDBRL", "FX_IDC:USDARS"],
+    "Índices": ["SP:SPX", "NASDAQ:NDX", "TVC:DJI", "BCBA:IMV", "INDEX:IBOV", "TVC:DAX", "TVC:NI225"],
+}
+
+
+def _tv_widget_html(symbol, height=620):
+    """Generate TradingView Advanced Chart widget HTML."""
+    return f"""
+    <!-- TradingView Widget BEGIN -->
+    <div class="tradingview-widget-container" style="height:{height}px;width:100%">
+      <div id="tradingview_chart" style="height:100%;width:100%"></div>
+      <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+      <script type="text/javascript">
+      new TradingView.widget({{
+        "autosize": true,
+        "symbol": "{symbol}",
+        "interval": "D",
+        "timezone": "America/Argentina/Buenos_Aires",
+        "theme": "dark",
+        "style": "1",
+        "locale": "es",
+        "backgroundColor": "rgba(0, 0, 0, 1)",
+        "gridColor": "rgba(30, 30, 30, 1)",
+        "toolbar_bg": "#000000",
+        "enable_publishing": false,
+        "hide_top_toolbar": false,
+        "hide_legend": false,
+        "save_image": true,
+        "hide_volume": false,
+        "container_id": "tradingview_chart",
+        "allow_symbol_change": true,
+        "watchlist": {list(_get_watchlist_symbols())},
+        "details": true,
+        "hotlist": false,
+        "calendar": false,
+        "studies": ["STD;EMA"],
+        "support_host": "https://www.tradingview.com"
+      }});
+      </script>
+    </div>
+    <!-- TradingView Widget END -->
+    """
+
+
+def _get_watchlist_symbols():
+    """Flat list of unique symbols for TV sidebar watchlist."""
+    seen = set()
+    result = []
+    for symbols in PRESETS.values():
+        for s in symbols:
+            if s not in seen:
+                seen.add(s)
+                result.append(s)
+    return result
+
 
 def render():
-    st.markdown('<div style="font-size:8px;color:#555;letter-spacing:1px;text-transform:uppercase;margin-bottom:3px">Tickers separados por coma (Yahoo Finance)</div>', unsafe_allow_html=True)
-    raw = st.text_input("WL", value=", ".join(DEFAULT), label_visibility="collapsed")
-    tickers = [t.strip().upper() for t in raw.split(",") if t.strip()]
-    if not tickers:
-        st.markdown('<p style="color:#333;font-size:10px">Ingresá al menos un ticker.</p>', unsafe_allow_html=True)
-        return
-    st.markdown('<div class="sh">WATCHLIST</div>', unsafe_allow_html=True)
-    for tk in tickers:
-        cl = _hist(tk)
-        if cl is None or len(cl) == 0: continue
-        p = float(cl.iloc[-1])
-        prev = float(cl.iloc[-2]) if len(cl)>=2 else p
-        chg = (p-prev)/prev*100 if prev else 0
-        chg_s, css = fmt_change(chg)
-        c = "#00ff41" if chg>0 else ("#ff3b3b" if chg<0 else "#555")
-        ci, cc = st.columns([2,3])
-        with ci:
-            st.markdown(f"""<div style="border:1px solid #222;padding:4px 8px;height:48px;display:flex;flex-direction:column;justify-content:center">
-              <div style="font-size:10px;font-weight:bold;color:#fff;letter-spacing:1px">{tk}</div>
-              <div style="font-size:14px;font-weight:bold;color:#ffcc00;line-height:1">{fmt_price(p)}</div>
-              <div style="font-size:9px;font-weight:bold;color:{c}">{chg_s}</div>
-            </div>""", unsafe_allow_html=True)
-        with cc:
-            fig = _spark(cl, c)
-            if fig: st.plotly_chart(fig, use_container_width=True, config={"displayModeBar":False})
+    # ── Symbol input row ──
+    col_input, col_preset = st.columns([2, 3])
+
+    with col_input:
+        st.markdown('<div style="font-size:8px;color:#555;letter-spacing:1px;text-transform:uppercase;margin-bottom:2px">SÍMBOLO (TradingView format)</div>', unsafe_allow_html=True)
+        symbol = st.text_input("SYM", value=DEFAULT_SYMBOL, label_visibility="collapsed",
+                               help="Ej: AAPL, BCBA:GGAL, BINANCE:BTCUSDT, TVC:GOLD")
+
+    with col_preset:
+        st.markdown('<div style="font-size:8px;color:#555;letter-spacing:1px;text-transform:uppercase;margin-bottom:2px">PRESETS</div>', unsafe_allow_html=True)
+        preset_cols = st.columns(len(PRESETS))
+        for i, (label, symbols) in enumerate(PRESETS.items()):
+            with preset_cols[i]:
+                if st.button(label, key=f"preset_{i}", use_container_width=True):
+                    symbol = symbols[0]
+                    st.session_state["SYM"] = symbol
+
+    # ── Clean symbol ──
+    symbol = symbol.strip().upper() if symbol else DEFAULT_SYMBOL
+
+    # ── TradingView Chart ──
+    chart_html = _tv_widget_html(symbol, height=620)
+    components.html(chart_html, height=630, scrolling=False)
+
+    # ── Footer hint ──
+    st.markdown(
+        '<div style="color:#333;font-size:8px;text-align:center;margin-top:2px;letter-spacing:1px">'
+        'CHART BY TRADINGVIEW · CLICK EN EL GRÁFICO PARA CAMBIAR SÍMBOLO, TIMEFRAME, INDICADORES, ESCALA LOG, ETC.'
+        '</div>',
+        unsafe_allow_html=True
+    )
