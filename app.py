@@ -37,11 +37,55 @@ div[data-testid="stAppViewBlockContainer"] { padding-top: 0 !important; }
     background: #000; border-bottom: 2px solid #ff6600;
     padding: 4px 16px 6px 16px; display: flex; align-items: center;
     justify-content: space-between; position: sticky; top: 0; z-index: 1000;
-    margin-bottom: 6px;
+    margin-bottom: 0;
 }
 .bbg-logo { font-weight: bold; font-size: 18px; color: #ff6600; letter-spacing: 3px; }
 .bbg-clock { font-size: 11px; color: #ff6600; text-align: right; }
 .bbg-clock .dt { color: #fff; font-size: 12px; display: block; }
+
+/* News ticker tape styles */
+.ticker-wrap {
+    overflow: hidden;
+    white-space: nowrap;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    height: 22px;
+    line-height: 22px;
+}
+.ticker-wrap a {
+    color: #ccc;
+    text-decoration: none;
+}
+.ticker-wrap a:hover {
+    color: #fff;
+    text-decoration: underline;
+}
+.ticker-intl {
+    background: #0a0a0a;
+    border-bottom: 1px solid #1a1a1a;
+}
+.ticker-arg {
+    background: #050505;
+    border-bottom: 1px solid #333;
+}
+.ticker-inner {
+    display: inline-block;
+    padding-left: 100%;
+}
+.ticker-intl .ticker-inner {
+    animation: tick-intl 220s linear infinite;
+}
+.ticker-arg .ticker-inner {
+    animation: tick-arg 180s linear infinite;
+}
+@keyframes tick-intl {
+    0%   { transform: translateX(0); }
+    100% { transform: translateX(-100%); }
+}
+@keyframes tick-arg {
+    0%   { transform: translateX(0); }
+    100% { transform: translateX(-100%); }
+}
 
 [data-testid="stTabs"] { margin: 0 !important; padding: 0 !important; }
 [data-testid="stTabBar"] {
@@ -65,7 +109,6 @@ div[data-testid="stAppViewBlockContainer"] { padding-top: 0 !important; }
 [data-testid="stTabBar"] [role="presentation"] { display: none !important; }
 [data-testid="stTabsContent"] { background: #000 !important; padding: 4px 4px !important; }
 
-/* Eliminate extra spacing between header and tabs */
 [data-testid="stVerticalBlock"] > [data-testid="stVerticalBlockBorderWrapper"]:first-child {
     margin-top: 0 !important;
     padding-top: 0 !important;
@@ -81,7 +124,6 @@ div[data-testid="stAppViewBlockContainer"] { padding-top: 0 !important; }
 .t tbody td { padding:2px 6px; text-align:left; color:#ccc; font-size:11px; white-space:nowrap; }
 .t tbody td:first-child { color:#fff; font-weight:bold; }
 
-/* Keep bbg-table alias */
 .bbg-table { width:100%; border-collapse:collapse; font-family:'Courier New',monospace; font-size:11px; }
 .bbg-table thead tr { background:#111; }
 .bbg-table thead th { color:#ff6600; font-size:8px; font-weight:bold; letter-spacing:1px; text-transform:uppercase; text-align:left; padding:2px 6px; border-bottom:1px solid #ff6600; white-space:nowrap; }
@@ -143,9 +185,63 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
+# ═══════════════════════════════════════════════════════════════════════════════
+#  DUAL NEWS TICKER TAPE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+from data import get_news_international, get_news_argentina
+
+SOURCE_COLORS = {
+    "REUTERS": "#ff6600", "CNBC": "#00bfff", "FT": "#f5a0a0",
+    "INVESTING": "#ffcc00", "WSJ": "#4ade80",
+    "ÁMBITO": "#00ff41", "BL LÍNEA": "#a855f7", "INFOBAE": "#ff3b3b",
+    "CRONISTA": "#60a5fa", "iPROF": "#c084fc",
+}
+
+CLEAN_SUFFIXES = [
+    " - Reuters", " - Financial Times", " - WSJ", " - El Cronista",
+    " - bloomberglinea.com", " - bloomberg",
+]
+
+def _build_ticker_html(headlines, max_items=25):
+    """Build HTML spans for ticker tape with clickable links."""
+    spans = []
+    for h in headlines[:max_items]:
+        src = h.get("source", "")
+        title = h.get("title", "").replace('"', '&quot;').replace("<", "&lt;").replace(">", "&gt;")
+        link = h.get("link", "")
+        for sfx in CLEAN_SUFFIXES:
+            title = title.replace(sfx, "")
+        if len(title) > 100:
+            title = title[:97] + "..."
+        col = SOURCE_COLORS.get(src, "#ff6600")
+        src_span = f'<span style="color:{col};font-weight:bold;font-size:10px">{src}</span>'
+        if link:
+            title_span = f'<a href="{link}" target="_blank" style="color:#ccc;text-decoration:none">{title}</a>'
+        else:
+            title_span = f'<span style="color:#ccc">{title}</span>'
+        spans.append(f'{src_span}&nbsp;{title_span}')
+    return '&nbsp;&nbsp;<span style="color:#333">│</span>&nbsp;&nbsp;'.join(spans)
+
+
+intl_news = get_news_international()
+arg_news = get_news_argentina()
+
+intl_html = _build_ticker_html(intl_news)
+arg_html = _build_ticker_html(arg_news)
+
+st.markdown(f"""
+<div class="ticker-wrap ticker-intl"><div class="ticker-inner">{intl_html}</div></div>
+<div class="ticker-wrap ticker-arg"><div class="ticker-inner">{arg_html}</div></div>
+""", unsafe_allow_html=True)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  TABS
+# ═══════════════════════════════════════════════════════════════════════════════
+
 from tabs import overview, argentina, bonos, futuros, mundo, watchlist
 
-tabs = st.tabs(["OVERVIEW", "🇦🇷 ARGENTINA", "BONOS", "FUTUROS & CURVA", "MUNDO", "WATCHLIST"])
+tabs = st.tabs(["OVERVIEW", "🇦🇷 ARGENTINA", "BONOS", "FUTUROS", "MUNDO", "WATCHLIST"])
 
 with tabs[0]: overview.render()
 with tabs[1]: argentina.render()
