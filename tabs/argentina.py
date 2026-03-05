@@ -204,8 +204,8 @@ def _build_sector_panel(sector_name, tickers, quotes, accent_color):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _build_heatmap(quotes):
-    """Treemap heatmap: size=volume, color=change_pct, grouped by sector.
-    Uses flat structure with explicit sector totals for maximum compatibility."""
+    """Treemap heatmap: size=volume, color=change_pct, grouped by sector."""
+    import math
 
     labels = []
     parents = []
@@ -216,6 +216,8 @@ def _build_heatmap(quotes):
 
     # Collect all sector data first
     sector_data = {}
+    all_leaf_changes = []  # track actual daily changes for color scaling
+
     for sector_name, sector_info in SECTORS.items():
         children = []
         sector_monto = 0
@@ -229,6 +231,7 @@ def _build_heatmap(quotes):
                 children.append((t, price, chg, monto))
                 sector_monto += monto
                 sector_chg_w += chg * monto
+                all_leaf_changes.append(chg)
         if sector_monto > 0:
             avg_chg = sector_chg_w / sector_monto
             sector_data[sector_name] = {
@@ -241,22 +244,25 @@ def _build_heatmap(quotes):
     if not sector_data:
         return None
 
-    # We use sqrt(monto) for treemap sizing to compress the scale —
-    # otherwise YPF/GGAL dominate and smaller companies are invisible.
-    # With branchvalues="total", parent value MUST equal sum of children exactly.
-    import math
-    total_market_monto = sum(s["total_monto"] for s in sector_data.values())
+    # ── Color scale range: use actual intraday moves, cap at ±15% ──
+    if all_leaf_changes:
+        actual_max = max(abs(c) for c in all_leaf_changes)
+        # Use the actual range but floor at 2% so there's always contrast,
+        # and cap at 15% so outliers don't wash out the palette
+        max_abs = max(2.0, min(actual_max, 15.0))
+    else:
+        max_abs = 5.0
 
     def _compress(v):
         return math.sqrt(max(v, 0))
 
-    # First pass: compute compressed sector values (= sum of compressed children)
+    # Compute compressed sector values (= sum of compressed children)
     sector_compressed_vals = {}
     for sector_name, sdata in sector_data.items():
         sector_compressed_vals[sector_name] = sum(_compress(m) for _, _, _, m in sdata["children"])
 
-    # Root = sum of all sector compressed values
     root_val = sum(sector_compressed_vals.values())
+    total_market_monto = sum(s["total_monto"] for s in sector_data.values())
 
     # Root
     labels.append("EQUITY ARG")
@@ -294,11 +300,6 @@ def _build_heatmap(quotes):
                 f"Monto: {_vol_fmt(monto)}"
             )
 
-    # Color range from leaf nodes
-    leaf_colors = [c for c, p in zip(colors, parents) if p not in ("", "EQUITY ARG")]
-    max_abs = max(abs(c) for c in leaf_colors) if leaf_colors else 1
-    max_abs = max(max_abs, 0.5)
-
     fig = go.Figure(go.Treemap(
         labels=labels,
         parents=parents,
@@ -307,13 +308,13 @@ def _build_heatmap(quotes):
         marker=dict(
             colors=colors,
             colorscale=[
-                [0.0, "#8b0000"],
+                [0.0,  "#8b0000"],
                 [0.15, "#cc2222"],
                 [0.35, "#551515"],
-                [0.5, "#222222"],
+                [0.5,  "#222222"],
                 [0.65, "#155515"],
                 [0.85, "#22cc22"],
-                [1.0, "#006400"],
+                [1.0,  "#006400"],
             ],
             cmid=0,
             cmin=-max_abs,
@@ -330,6 +331,15 @@ def _build_heatmap(quotes):
                 len=0.5,
                 thickness=12,
                 x=1.01,
+                # Dynamic ticks based on actual range
+                tickvals=[-max_abs, -max_abs/2, 0, max_abs/2, max_abs],
+                ticktext=[
+                    f"{-max_abs:.1f}%",
+                    f"{-max_abs/2:.1f}%",
+                    "0%",
+                    f"+{max_abs/2:.1f}%",
+                    f"+{max_abs:.1f}%",
+                ],
             ),
         ),
         text=text_lines,
@@ -355,7 +365,7 @@ def _build_heatmap(quotes):
         margin=dict(l=4, r=4, t=35, b=4),
         height=720,
         title=dict(
-            text="EQUITY ARG · HEATMAP POR SECTOR — TAMAÑO = MONTO OPERADO · COLOR = VARIACIÓN DIA",
+            text=f"EQUITY ARG · HEATMAP POR SECTOR — TAMAÑO = MONTO OPERADO · COLOR = VARIACIÓN DIA · ESCALA ±{max_abs:.1f}%",
             font=dict(family="Courier New", size=10, color="#ff6600"),
             x=0.01, xanchor="left",
         ),
