@@ -189,7 +189,7 @@ pre { background:#050505 !important; border:1px solid #222 !important; font-size
 """, unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  HEADER + DUAL NEWS TICKER — single HTML block for tight layout
+#  HEADER + DUAL NEWS TICKER
 # ═══════════════════════════════════════════════════════════════════════════════
 
 from datetime import datetime
@@ -231,24 +231,20 @@ def _build_ticker_html(headlines, max_items=25):
     return '&nbsp;&nbsp;<span style="color:#333">│</span>&nbsp;&nbsp;'.join(spans)
 
 intl_news = get_news_international()
-arg_news = get_news_argentina()
+arg_news  = get_news_argentina()
 intl_html = _build_ticker_html(intl_news)
-arg_html = _build_ticker_html(arg_news)
+arg_html  = _build_ticker_html(arg_news)
 
-# Single HTML block: header + 2 ticker rows + spacing
 st.markdown(f"""
 <div style="margin-bottom:6px">
-  <!-- Header -->
   <div class="bbg-header">
     <div class="bbg-logo">MARKETS TERMINAL</div>
     <div class="bbg-clock">ULTIMA ACTUALIZACION<span class="dt">{now_ar.strftime('%d/%m/%Y')} &nbsp; ART {now_ar.strftime('%H:%M:%S')} · ET {now_et.strftime('%H:%M:%S')}</span></div>
   </div>
-  <!-- Ticker: International -->
   <div class="ticker-row ticker-row-intl">
     <div class="ticker-label ticker-label-intl">INTL</div>
     <div class="ticker-scroll"><div class="ticker-inner">{intl_html}</div></div>
   </div>
-  <!-- Ticker: Argentina -->
   <div class="ticker-row ticker-row-arg">
     <div class="ticker-label ticker-label-arg">ARG</div>
     <div class="ticker-scroll"><div class="ticker-inner">{arg_html}</div></div>
@@ -260,15 +256,16 @@ st.markdown(f"""
 #  TABS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-from tabs import overview, argentina, bonos, futuros, mundo, watchlist
+from tabs import overview, argentina, bonos, cer, futuros, mundo, watchlist
 
-tabs = st.tabs(["OVERVIEW", "🇦🇷 ARGENTINA", "BONOS", "FUTUROS", "MUNDO", "GRAFICADORA"])
+tabs = st.tabs(["OVERVIEW", "🇦🇷 ARGENTINA", "BONOS", "CER", "FUTUROS", "MUNDO", "GRAFICADORA"])
 
 with tabs[0]: overview.render()
 with tabs[1]: argentina.render()
 with tabs[2]: bonos.render()
-with tabs[3]: futuros.render()
-with tabs[4]: mundo.render()
-with tabs[5]: watchlist.render()
+with tabs[3]: cer.render()
+with tabs[4]: futuros.render()
+with tabs[5]: mundo.render()
+with tabs[6]: watchlist.render()
 
 st.markdown('<div class="ft">MARKET DATA — ALL RIGHTS RESERVED</div>', unsafe_allow_html=True)
