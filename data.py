@@ -129,19 +129,12 @@ def get_bondterminal_bootstrap():
 
 @st.cache_data(ttl=TTL, show_spinner=False)
 def get_riesgo_pais():
-    """
-    Riesgo País EMBI (JP Morgan) — multi-source:
-      1. ArgentinaDatos API (primary — real EMBI value)
-      2. Ámbito historical API (fallback)
-      3. BondTerminal (last resort — note: returns weighted spread, not EMBI)
-    """
     result = {
         "bps": "—", "bps_ambito": "—",
         "delta_1d": 0, "delta_1w": 0, "delta_1m": 0,
         "data_quality": "", "as_of": "",
     }
 
-    # ── Source 1: ArgentinaDatos API (real EMBI) ──
     try:
         r = requests.get(
             "https://api.argentinadatos.com/v1/finanzas/indices/riesgo-pais",
@@ -157,27 +150,22 @@ def get_riesgo_pais():
                     result["as_of"] = latest.get("fecha", "")
                     result["data_quality"] = "argentinadatos"
                     result["bps_ambito"] = round(bps)
-
                     if len(data) >= 2:
                         prev = data[-2].get("valor")
                         if prev is not None:
                             result["delta_1d"] = round(bps - prev, 1)
-
                     if len(data) >= 6:
                         prev_w = data[-6].get("valor")
                         if prev_w is not None:
                             result["delta_1w"] = round(bps - prev_w, 1)
-
                     if len(data) >= 23:
                         prev_m = data[-23].get("valor")
                         if prev_m is not None:
                             result["delta_1m"] = round(bps - prev_m, 1)
-
                     return result
     except Exception:
         pass
 
-    # ── Source 2: Ámbito historical API ──
     try:
         r = requests.get(
             "https://mercados.ambito.com/riesgo-pais/historico-general",
@@ -194,7 +182,6 @@ def get_riesgo_pais():
                         result["bps"] = round(bps)
                         result["bps_ambito"] = round(bps)
                         result["data_quality"] = "ambito"
-
                         if len(data) > 2:
                             try:
                                 prev_str = str(data[2][1]).replace(".", "").replace(",", ".").strip()
@@ -213,14 +200,12 @@ def get_riesgo_pais():
                                 result["delta_1m"] = round(bps - float(prev_m_str), 1)
                             except Exception:
                                 pass
-
                         return result
                     except (ValueError, TypeError):
                         pass
     except Exception:
         pass
 
-    # ── Source 3: BondTerminal (last resort) ──
     try:
         r = requests.get("https://bondterminal.com/api/riesgo-pais",
                          headers=HEADERS, timeout=8)
@@ -542,6 +527,34 @@ def get_eco_bonos_ars():
         return {}
 
 
+@st.cache_data(ttl=TTL, show_spinner=False)
+def get_eco_bonos_by_index(table_index: int):
+    """
+    Devuelve DataFrame de Ecovalores por índice de tabla (confirmados empíricamente):
+      8  → CER  (CUAP, DICP, DIP0, PAP0, PARP, TX26, TX28, TZX26, TZX27, TZX28)
+      13 → Tasa Fija (TO26)
+      16 → BOPREAL (BPOA7, BPOB7, BPOC7)
+      19 → Soberanos USD en ARS (AE38, AL29, AL30, AL35, AL41, GD29, GD30...)
+      22 → Soberanos USD en USD (AE38D, AL30D, GD30D...)
+      25 → Dollar Linked (TZV26)
+    """
+    html = get_ecovalores_raw()
+    if not html:
+        return None
+    try:
+        from io import StringIO
+        tables = pd.read_html(StringIO(html), flavor="lxml")
+        if table_index >= len(tables):
+            return None
+        df = tables[table_index]
+        if hasattr(df.columns, 'levels'):
+            df.columns = df.columns.get_level_values(0)
+        df.columns = [str(c).strip() for c in df.columns]
+        return df.dropna(how="all").reset_index(drop=True)
+    except Exception:
+        return None
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #  yfinance — índices globales
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -655,7 +668,6 @@ PPI_CURRENCY_MAP = {
 
 
 def _tna_valida(tna):
-    """Filtra TNAs absurdas: TAMAR reporta negativos extremos, CER sin TIR reporta 0."""
     if tna is None or tna == 0 or tna < -50:
         return None
     return round(tna, 2)
@@ -663,13 +675,6 @@ def _tna_valida(tna):
 
 @st.cache_data(ttl=TTL, show_spinner=False)
 def get_letras_ppi():
-    """
-    Letras desde portfoliopersonal.com — extrae __NEXT_DATA__ del HTML SSR.
-    Retorna lista de dicts con:
-      ticker, description, last, pct_change, volume,
-      expiration_date, tna, currency, bid, ask
-    Fallback: lista vacía (usar get_letras() de data912).
-    """
     import json as _json
     try:
         r = requests.get(
@@ -698,12 +703,10 @@ def get_letras_ppi():
 
             currency_id = inst.get("currency", {}).get("id", 10000)
             currency = PPI_CURRENCY_MAP.get(currency_id, "ARS")
-
             tna = _tna_valida(inst.get("tir", 0))
-
             expiry = inst.get("expirationDate", "")
             if expiry:
-                expiry = expiry[:10]  # YYYY-MM-DD
+                expiry = expiry[:10]
 
             result.append({
                 "ticker": inst.get("ticker", ""),
@@ -728,7 +731,7 @@ def get_letras_ppi():
 #  NEWS TICKER — RSS feeds from multiple sources
 # ═══════════════════════════════════════════════════════════════════════════════
 
-NEWS_TTL = 300  # 5 min cache
+NEWS_TTL = 300
 
 
 def _parse_feed(url, source_name, max_items=5):
@@ -744,8 +747,6 @@ def _parse_feed(url, source_name, max_items=5):
     except Exception:
         return []
 
-
-# ── International feeds ──
 
 @st.cache_data(ttl=NEWS_TTL, show_spinner=False)
 def _news_reuters():
@@ -766,8 +767,6 @@ def _news_ft():
 @st.cache_data(ttl=NEWS_TTL, show_spinner=False)
 def _news_wsj():
     return _parse_feed("https://news.google.com/rss/search?q=site:wsj.com+markets+OR+economy&hl=en&gl=US&ceid=US:en", "WSJ")
-
-# ── Argentina feeds ──
 
 @st.cache_data(ttl=NEWS_TTL, show_spinner=False)
 def _news_ambito():
