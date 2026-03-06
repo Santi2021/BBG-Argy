@@ -7,7 +7,7 @@ import streamlit as st
 import plotly.graph_objects as go
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from data import fmt_price, fmt_change
+from data import fmt_price, fmt_change, _get_closes
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  SECTOR DEFINITIONS — tickers BYMA en ARS
@@ -64,7 +64,7 @@ for sec in SECTORS.values():
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  DATA FETCHING — yfinance batch
+#  DATA FETCHING — yfinance batch, compatible con 0.2.58+
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @st.cache_data(ttl=60, show_spinner=False)
@@ -74,54 +74,47 @@ def _fetch_arg_equity():
     import pandas as pd
 
     yf_symbols = [f"{t}.BA" for t in ALL_TICKERS]
+    n = len(yf_symbols)
     result = {}
 
     try:
         raw = yf.download(
-            yf_symbols, period="5d", interval="1d", group_by="ticker",
+            yf_symbols, period="5d", interval="1d",
             auto_adjust=True, progress=False, threads=True,
         )
 
         for ticker, yf_sym in zip(ALL_TICKERS, yf_symbols):
             try:
-                if len(yf_symbols) == 1:
-                    df = raw
+                closes  = _get_closes(raw, yf_sym, n).dropna()
+                # Volume — mismo patrón de acceso
+                if isinstance(raw.columns, pd.MultiIndex):
+                    level0 = raw.columns.get_level_values(0).tolist()
+                    if "Volume" in level0:
+                        volumes = raw["Volume"][yf_sym].dropna()
+                    else:
+                        volumes = raw[yf_sym]["Volume"].dropna()
                 else:
-                    try:
-                        df = raw[yf_sym]
-                    except (KeyError, TypeError):
-                        try:
-                            df = raw.xs(yf_sym, axis=1, level=0)
-                        except Exception:
-                            result[ticker] = {"price": None, "change_pct": 0, "volume": 0, "monto": 0}
-                            continue
-
-                if df is None or (hasattr(df, 'empty') and df.empty):
-                    result[ticker] = {"price": None, "change_pct": 0, "volume": 0, "monto": 0}
-                    continue
-
-                closes = df["Close"].dropna()
-                volumes = df["Volume"].dropna()
+                    volumes = pd.Series(dtype=float)
 
                 if len(closes) >= 2:
                     price = float(closes.iloc[-1])
-                    prev = float(closes.iloc[-2])
-                    chg = (price - prev) / prev * 100 if prev != 0 else 0
+                    prev  = float(closes.iloc[-2])
+                    chg   = (price - prev) / prev * 100 if prev != 0 else 0
                 elif len(closes) == 1:
                     price = float(closes.iloc[-1])
-                    chg = 0
+                    chg   = 0
                 else:
                     price = None
-                    chg = 0
+                    chg   = 0
 
-                vol = int(volumes.iloc[-1]) if len(volumes) > 0 else 0
+                vol   = int(volumes.iloc[-1]) if len(volumes) > 0 else 0
                 monto = vol * price if (vol and price) else 0
 
                 result[ticker] = {
-                    "price": price,
+                    "price":      price,
                     "change_pct": round(chg, 2),
-                    "volume": vol,
-                    "monto": round(monto),
+                    "volume":     vol,
+                    "monto":      round(monto),
                 }
             except Exception:
                 result[ticker] = {"price": None, "change_pct": 0, "volume": 0, "monto": 0}
@@ -175,7 +168,6 @@ def _panel_html(title, headers, rows_html, accent_color="#ff6600", max_height=22
 
 
 def _build_sector_panel(sector_name, tickers, quotes, accent_color):
-    """Build rows for a sector panel."""
     items = []
     total_monto = 0
     for t in tickers:
@@ -204,7 +196,6 @@ def _build_sector_panel(sector_name, tickers, quotes, accent_color):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _build_heatmap(quotes):
-    """Treemap heatmap: size=volume, color=change_pct, grouped by sector."""
     import math
 
     labels = []
@@ -214,9 +205,8 @@ def _build_heatmap(quotes):
     text_lines = []
     hover_texts = []
 
-    # Collect all sector data first
     sector_data = {}
-    all_leaf_changes = []  # track actual daily changes for color scaling
+    all_leaf_changes = []
 
     for sector_name, sector_info in SECTORS.items():
         children = []
@@ -244,11 +234,8 @@ def _build_heatmap(quotes):
     if not sector_data:
         return None
 
-    # ── Color scale range: use actual intraday moves, cap at ±15% ──
     if all_leaf_changes:
         actual_max = max(abs(c) for c in all_leaf_changes)
-        # Use the actual range but floor at 2% so there's always contrast,
-        # and cap at 15% so outliers don't wash out the palette
         max_abs = max(2.0, min(actual_max, 15.0))
     else:
         max_abs = 5.0
@@ -256,7 +243,6 @@ def _build_heatmap(quotes):
     def _compress(v):
         return math.sqrt(max(v, 0))
 
-    # Compute compressed sector values (= sum of compressed children)
     sector_compressed_vals = {}
     for sector_name, sdata in sector_data.items():
         sector_compressed_vals[sector_name] = sum(_compress(m) for _, _, _, m in sdata["children"])
@@ -264,7 +250,6 @@ def _build_heatmap(quotes):
     root_val = sum(sector_compressed_vals.values())
     total_market_monto = sum(s["total_monto"] for s in sector_data.values())
 
-    # Root
     labels.append("EQUITY ARG")
     parents.append("")
     values.append(root_val)
@@ -331,7 +316,6 @@ def _build_heatmap(quotes):
                 len=0.5,
                 thickness=12,
                 x=1.01,
-                # Dynamic ticks based on actual range
                 tickvals=[-max_abs, -max_abs/2, 0, max_abs/2, max_abs],
                 ticktext=[
                     f"{-max_abs:.1f}%",
