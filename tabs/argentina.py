@@ -67,6 +67,15 @@ for sec in SECTORS.values():
 #  DATA FETCHING — yfinance batch, compatible con 0.2.58+
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def _prev_close_fallback(sym: str) -> float | None:
+    """Obtiene previousClose via fast_info — fallback cuando download devuelve < 2 filas."""
+    try:
+        fi = yf.Ticker(sym).fast_info
+        return float(fi.get("previous_close") or fi.get("previousClose") or 0) or None
+    except Exception:
+        return None
+
+
 @st.cache_data(ttl=60, show_spinner=False)
 def _fetch_arg_equity():
     """Fetch all Argentine equity data via yfinance .BA tickers."""
@@ -102,7 +111,8 @@ def _fetch_arg_equity():
                     chg   = (price - prev) / prev * 100 if prev != 0 else 0
                 elif len(closes) == 1:
                     price = float(closes.iloc[-1])
-                    chg   = 0
+                    prev  = _prev_close_fallback(yf_sym)
+                    chg   = (price - prev) / prev * 100 if prev else 0
                 else:
                     price = None
                     chg   = 0
