@@ -205,8 +205,11 @@ def _build_letras():
         item for item in (ppi or [])
         if item.get("currency") == "ARS"
         and item.get("tna") is not None
+        and item.get("tna") > 0          # excluir CER, TAMAR, dollar-linked
         and item.get("expiration_date")
         and item.get("last", 0) > 0
+        and item.get("last", 0) < 10000  # excluir dollar-linked (precio ~140k)
+        and str(item.get("ticker", ""))[0] in ("S", "T")  # solo capitalizables tasa fija
     ]
 
     # Una letra por mes: la de mayor volumen operado
@@ -240,6 +243,42 @@ def _build_letras():
 
     if not rows:
         rows = '<tr><td colspan="5" style="color:#555">Sin datos PPI</td></tr>'
+
+    # ── Dollar-linked ──
+    dl_candidatos = [
+        item for item in (ppi or [])
+        if item.get("tna") is not None
+        and item.get("tna") > 0
+        and item.get("expiration_date")
+        and item.get("last", 0) > 0
+        and str(item.get("ticker", ""))[0] == "D"
+    ]
+    dl_by_month = {}
+    for item in dl_candidatos:
+        mes = item["expiration_date"][:7]
+        vol = item.get("volume", 0) or 0
+        if mes not in dl_by_month or vol > (dl_by_month[mes].get("volume") or 0):
+            dl_by_month[mes] = item
+
+    dl_curva = sorted(
+        [x for x in dl_by_month.values() if x["expiration_date"] >= hoy],
+        key=lambda x: x["expiration_date"]
+    )
+
+    if dl_curva:
+        rows += '<tr><td colspan="5" style="border-top:1px solid #333;padding:2px 6px;color:#00bfff;font-size:8px;font-weight:bold;letter-spacing:1px">DOLLAR LINKED</td></tr>'
+        for item in dl_curva:
+            tk = item["ticker"]
+            p = item["last"]
+            chg = item.get("pct_change", 0)
+            tna = item["tna"]
+            vto = item["expiration_date"]
+
+            p_s = fmt_price(p) if p else "—"
+            tna_s = f'<span style="color:#00bfff;font-weight:bold">{tna:.1f}%</span>'
+            vto_s = f'<span style="color:#555;font-size:9px">{vto[5:7]}/{vto[2:4]}</span>'
+
+            rows += f'<tr><td>{tk}</td><td style="color:#ffcc00">{p_s}</td><td>{_pct_html(chg)}</td><td>{tna_s}</td><td>{vto_s}</td></tr>'
 
     return rows
 
