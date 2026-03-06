@@ -8,6 +8,7 @@ Sources:
   - dolarapi.com      → tipos de cambio (blue, oficial, tarjeta…)
   - yfinance          → índices globales, commodities, sectores US
   - IOL               → cauciones (scraping)
+  - PPI               → letras ARS con TNA real (portfoliopersonal.com)
   - RSS feeds         → news ticker (Reuters, CNBC, FT, WSJ, Ámbito, etc.)
 """
 
@@ -149,7 +150,6 @@ def get_riesgo_pais():
         if r.status_code == 200:
             data = r.json()
             if data and isinstance(data, list) and len(data) > 0:
-                # Data: [{fecha: "YYYY-MM-DD", valor: N}, ...] sorted by date asc
                 latest = data[-1]
                 bps = latest.get("valor")
                 if bps is not None:
@@ -158,19 +158,16 @@ def get_riesgo_pais():
                     result["data_quality"] = "argentinadatos"
                     result["bps_ambito"] = round(bps)
 
-                    # 1 day delta
                     if len(data) >= 2:
                         prev = data[-2].get("valor")
                         if prev is not None:
                             result["delta_1d"] = round(bps - prev, 1)
 
-                    # 1 week delta (~5 trading days)
                     if len(data) >= 6:
                         prev_w = data[-6].get("valor")
                         if prev_w is not None:
                             result["delta_1w"] = round(bps - prev_w, 1)
 
-                    # 1 month delta (~22 trading days)
                     if len(data) >= 23:
                         prev_m = data[-23].get("valor")
                         if prev_m is not None:
@@ -189,7 +186,6 @@ def get_riesgo_pais():
         if r.status_code == 200:
             data = r.json()
             if data and isinstance(data, list) and len(data) > 1:
-                # First row is headers, rest is data (most recent first)
                 latest_row = data[1] if len(data) > 1 else None
                 if latest_row and len(latest_row) >= 2:
                     bps_str = str(latest_row[1]).replace(".", "").replace(",", ".").strip()
@@ -229,8 +225,6 @@ def get_riesgo_pais():
         r = requests.get("https://bondterminal.com/api/riesgo-pais",
                          headers=HEADERS, timeout=8)
         d = r.json()
-        # Note: weightedSpreadBps != EMBI, but better than nothing
-        # Use ambitoValue if available (BT scrapes it too)
         ambito_val = d.get("ambitoValue")
         if ambito_val is not None:
             result["bps"] = round(float(ambito_val))
@@ -645,6 +639,89 @@ def safe_get(item: dict, field: str, default="—"):
     if val is None:
         return default
     return val
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  PPI — Letras con TNA real (portfoliopersonal.com via __NEXT_DATA__ SSR)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+PPI_LETRAS_URL = "https://www.portfoliopersonal.com/Cotizaciones/Letras"
+
+PPI_CURRENCY_MAP = {
+    10000: "ARS",
+    22013: "USD MEP",
+    10001: "USD CCL",
+}
+
+
+def _tna_valida(tna):
+    """Filtra TNAs absurdas: TAMAR reporta negativos extremos, CER sin TIR reporta 0."""
+    if tna is None or tna == 0 or tna < -50:
+        return None
+    return round(tna, 2)
+
+
+@st.cache_data(ttl=TTL, show_spinner=False)
+def get_letras_ppi():
+    """
+    Letras desde portfoliopersonal.com — extrae __NEXT_DATA__ del HTML SSR.
+    Retorna lista de dicts con:
+      ticker, description, last, pct_change, volume,
+      expiration_date, tna, currency, bid, ask
+    Fallback: lista vacía (usar get_letras() de data912).
+    """
+    import json as _json
+    try:
+        r = requests.get(
+            PPI_LETRAS_URL,
+            headers={**HEADERS, "Accept": "text/html,application/xhtml+xml,*/*;q=0.8"},
+            timeout=15
+        )
+        if r.status_code != 200 or len(r.text) < 10000:
+            return []
+
+        m = re.search(
+            r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>',
+            r.text, re.DOTALL
+        )
+        if not m:
+            return []
+
+        data = _json.loads(m.group(1))
+        instruments = data.get("props", {}).get("pageProps", {}).get("instruments", [])
+
+        result = []
+        for inst in instruments:
+            last = inst.get("lastPrice", 0)
+            if last == 0:
+                continue
+
+            currency_id = inst.get("currency", {}).get("id", 10000)
+            currency = PPI_CURRENCY_MAP.get(currency_id, "ARS")
+
+            tna = _tna_valida(inst.get("tir", 0))
+
+            expiry = inst.get("expirationDate", "")
+            if expiry:
+                expiry = expiry[:10]  # YYYY-MM-DD
+
+            result.append({
+                "ticker": inst.get("ticker", ""),
+                "description": inst.get("description", ""),
+                "last": last,
+                "pct_change": inst.get("variation", 0),
+                "volume": inst.get("volumen", 0),
+                "expiration_date": expiry,
+                "tna": tna,
+                "currency": currency,
+                "bid": inst.get("pricePurchase", 0),
+                "ask": inst.get("priceSale", 0),
+            })
+
+        return result
+
+    except Exception:
+        return []
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
