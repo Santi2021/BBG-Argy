@@ -129,15 +129,28 @@ INDUSTRY_ETFS = {
 #  YFINANCE BATCH — compatible con 0.2.58+ (MultiIndex field-first)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def _prev_close_fallback(sym: str) -> float | None:
+    """Obtiene previousClose via fast_info — fallback cuando download devuelve < 2 filas."""
+    try:
+        fi = yf.Ticker(sym).fast_info
+        return float(fi.get("previous_close") or fi.get("previousClose") or 0) or None
+    except Exception:
+        return None
+
+
 @st.cache_data(ttl=TTL, show_spinner=False)
 def _yf_batch(tickers: list):
-    """Returns dict {ticker: {price, change_pct}} — robust para yfinance >= 0.2.58."""
+    """
+    Returns dict {ticker: {price, change_pct}} — robust para yfinance >= 0.2.58.
+    Usa period='5d' para buffer ante feriados/baja liquidez.
+    Fallback a fast_info.previous_close si download devuelve < 2 filas.
+    """
     if not tickers:
         return {}
     n = len(tickers)
     try:
         raw = yf.download(
-            tickers, period="2d", interval="1d",
+            tickers, period="5d", interval="1d",
             auto_adjust=True, progress=False, threads=True,
         )
         result = {}
@@ -148,8 +161,12 @@ def _yf_batch(tickers: list):
                     price = float(closes.iloc[-1])
                     prev  = float(closes.iloc[-2])
                     chg   = (price - prev) / prev * 100
+                elif len(closes) == 1:
+                    price = float(closes.iloc[-1])
+                    prev  = _prev_close_fallback(sym)
+                    chg   = (price - prev) / prev * 100 if prev else 0.0
                 else:
-                    price = float(closes.iloc[-1]) if len(closes) else None
+                    price = None
                     chg   = 0.0
                 result[sym] = {"price": price, "change_pct": round(chg, 2)}
             except Exception:
