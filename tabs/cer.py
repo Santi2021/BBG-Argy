@@ -37,58 +37,52 @@ def _parse_cer_df(df):
         df.columns = df.columns.get_level_values(0)
     df.columns = [str(c).strip() for c in df.columns]
 
-    # Mapeo flexible — los headers de Ecovalores vienen con encoding raro
-    col_map = {}
-    for col in df.columns:
-        cl = col.lower()
-        if "especie" in cl:
-            col_map.setdefault("especie", col)
-        elif any(x in cl for x in ["ltimo", "ultimo", "timo"]):
-            col_map.setdefault("ultimo", col)
-        elif "tir" in cl:
-            col_map.setdefault("tir", col)
-        elif "dur" in cl:
-            col_map.setdefault("dur", col)
-        elif "mes" in cl:
-            col_map.setdefault("mes", col)
-        elif "unnamed" not in cl and ("año" in cl or "ano" in cl or "a" in cl):
-            if "%" in col or "año" in cl or "ano" in cl:
-                col_map.setdefault("anio", col)
-        elif "unnamed" not in cl and ("día" in cl or "dia" in cl or "d" in cl):
-            if "%" in col or "día" in cl or "dia" in cl:
-                col_map.setdefault("dia", col)
-
-    # Fallback por posición si el mapeo por nombre falla
+    # Siempre usamos posición — TABLE 8 tiene exactamente 7 columnas:
+    # 0=Especie, 1=Último, 2=%Día, 3=%Mes, 4=%Año, 5=%TIR, 6=Dur.
     cols = list(df.columns)
-    if len(cols) >= 7:
-        col_map.setdefault("especie", cols[0])
-        col_map.setdefault("ultimo",  cols[1])
-        col_map.setdefault("dia",     cols[2])
-        col_map.setdefault("mes",     cols[3])
-        col_map.setdefault("anio",    cols[4])
-        col_map.setdefault("tir",     cols[5])
-        col_map.setdefault("dur",     cols[6])
+    if len(cols) < 7:
+        return []
+
+    # Tickers CER conocidos para filtrar filas basura
+    VALID_TICKERS = {
+        "CUAP", "DICP", "DIP0", "PAP0", "PARP",
+        "TX26", "TX28", "TX29", "TX30", "TX31",
+        "TZX26", "TZX27", "TZX28", "TZX29", "TZX30",
+    }
 
     result = []
     for _, row in df.iterrows():
-        especie = str(row.get(col_map.get("especie", cols[0] if cols else ""), "")).strip()
+        especie = str(row.iloc[0]).strip()
+        # Filtrar headers repetidos, filas vacías y filas basura
         if not especie or especie.lower() in ("nan", "especie", ""):
             continue
+        # Descartar filas que no son tickers válidos (ej: la fila concatenada)
+        if len(especie) > 6:
+            continue
 
-        ultimo = _parse_precio(row.get(col_map.get("ultimo", ""), None))
-        dia    = _parse_num(row.get(col_map.get("dia",   ""), None))
-        mes    = _parse_num(row.get(col_map.get("mes",   ""), None))
-        anio   = _parse_num(row.get(col_map.get("anio",  ""), None))
-        tir    = _parse_num(row.get(col_map.get("tir",   ""), None))
-        dur    = _parse_num(row.get(col_map.get("dur",   ""), None))
+        ultimo = _parse_precio(row.iloc[1])
+        # Ecovalores devuelve porcentajes como enteros sin decimal (-1 = -0.1%, -11 = -1.1%)
+        dia    = _parse_num(row.iloc[2])
+        mes    = _parse_num(row.iloc[3])
+        anio   = _parse_num(row.iloc[4])
+        tir    = _parse_num(row.iloc[5])
+        dur_raw = _parse_num(row.iloc[6])
+
+        def _fix_pct(v):
+            if v is None: return None
+            # Si viene como entero grande (ej: -11 para -1.1%), dividir por 10
+            # TIR viene correcta (88 = 8.8%) — también dividir por 10
+            return round(v / 10, 1)
+
+        dur = round(dur_raw / 10, 1) if dur_raw is not None else None
 
         result.append({
             "especie": especie,
             "ultimo":  ultimo,
-            "dia":     dia,
-            "mes":     mes,
-            "anio":    anio,
-            "tir":     tir,
+            "dia":     _fix_pct(dia),
+            "mes":     _fix_pct(mes),
+            "anio":    _fix_pct(anio),
+            "tir":     _fix_pct(tir),
             "dur":     dur,
         })
 
