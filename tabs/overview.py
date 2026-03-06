@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from data import (
     get_yf_quotes, get_dolar, get_riesgo_pais, get_acciones,
     get_bondterminal_bootstrap, get_futuros_dolar, get_adrs,
-    get_letras, get_bonos_ars, get_us_rates,
+    get_letras, get_bonos_ars, get_us_rates, get_letras_ppi,
     fmt_price, fmt_change,
     COMMODITY_TICKERS,
 )
@@ -180,7 +180,7 @@ def _build_bonos():
     rows = ""
     if isinstance(boot, dict) and "error" not in boot:
         sov = boot.get("sovereignSnapshot", {})
-        for sec in sov.get("sections", []):
+        for sec in sov.get("sections",[]):
             for b in sec.get("bonds", []):
                 tk = b.get("ticker", "")
                 p = b.get("price")
@@ -192,31 +192,59 @@ def _build_bonos():
 
 
 def _build_letras():
-    letras = get_letras()
-    bonos = get_bonos_ars()
+    """
+    Letras ARS — fuente primaria PPI (tiene TNA real), fallback data912.
+    Columnas: TICKER | MKT | PRECIO | % DIA | TNA | VTO
+    """
+    # Fuente primaria: PPI
+    ppi = get_letras_ppi()
+    by_ticker = {}
+    for item in (ppi or []):
+        if item.get("currency") == "ARS":
+            by_ticker[item.get("ticker", "")] = item
+
+    # Fallback: data912 (sin TNA)
+    if not by_ticker:
+        for item in (get_letras() or []):
+            tk = item.get("ticker", "")
+            if tk not in by_ticker:
+                by_ticker[tk] = item
+        for item in (get_bonos_ars() or []):
+            tk = item.get("ticker", "")
+            if tk not in by_ticker:
+                by_ticker[tk] = item
+
     LETRAS_ORDER = [
         "S16M6", "S17A6", "S30A6", "S29Y6", "T30J6", "S31L6",
         "S31G6", "S30O6", "S30N6", "T15E7", "T30A7", "T31Y7", "T30J7",
     ]
-    by_ticker = {}
-    for item in (bonos or []):
-        tk = item.get("ticker", "")
-        if tk in LETRAS_ORDER:
-            by_ticker[tk] = item
-    for item in (letras or []):
-        tk = item.get("ticker", "")
-        if tk in LETRAS_ORDER:
-            by_ticker[tk] = item
+
     rows = ""
     for tk in LETRAS_ORDER:
         item = by_ticker.get(tk)
         if item:
-            p = item.get("last")
-            chg = item.get("pct_change")
+            p = item.get("last") or item.get("price")
+            chg = item.get("pct_change", 0)
+            tna = item.get("tna")
+            vto = item.get("expiration_date", "")
+
             p_s = fmt_price(p) if p else "—"
-            rows += f'<tr><td>{tk}</td><td class="mkt">BYMA</td><td style="color:#ffcc00">{p_s}</td><td>{_pct_html(chg)}</td></tr>'
+
+            if tna is not None:
+                tna_s = f'<span style="color:#ff6600;font-weight:bold">{tna:.1f}%</span>'
+            else:
+                tna_s = '<span style="color:#555">—</span>'
+
+            # VTO: MM/YY
+            if vto and len(vto) >= 7:
+                vto_s = f'<span style="color:#555;font-size:9px">{vto[5:7]}/{vto[2:4]}</span>'
+            else:
+                vto_s = '<span style="color:#555">—</span>'
+
+            rows += f'<tr><td>{tk}</td><td class="mkt">BYMA</td><td style="color:#ffcc00">{p_s}</td><td>{_pct_html(chg)}</td><td>{tna_s}</td><td>{vto_s}</td></tr>'
         else:
-            rows += f'<tr><td>{tk}</td><td class="mkt">BYMA</td><td style="color:#555">—</td><td style="color:#555">—</td></tr>'
+            rows += f'<tr><td>{tk}</td><td class="mkt">BYMA</td><td style="color:#555">—</td><td style="color:#555">—</td><td style="color:#555">—</td><td style="color:#555">—</td></tr>'
+
     return rows
 
 
@@ -273,7 +301,7 @@ def render():
 
     p1 = _panel_html("CAUCIONES", ["PLAZO","TNA","VOLUMEN"], r_cau, PH)
     p2 = _panel_html("FUTUROS DÓLAR", ["CONTRATO","ÚLTIMO","TNA"], r_fut, PH)
-    p3 = _panel_html("LETRAS EN ARS", ["TICKER","MKT","PRECIO","% DIA"], r_let, PH)
+    p3 = _panel_html("LETRAS EN ARS · PPI", ["TICKER","MKT","PRECIO","% DIA","TNA","VTO"], r_let, PH)
 
     p4 = _panel_html("BONOS SOBERANOS", ["BONO","PRECIO","Δ DIA","YIELD","DUR"], r_bon, PH)
     p5 = _panel_html("CORPORATIVOS", ["BONO","PRECIO","Δ DIA","YIELD","DUR"], r_corp, PH)
