@@ -31,6 +31,34 @@ TTL = 60  # seconds
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+#  YFINANCE COMPAT — Robust MultiIndex accessor for yfinance >= 0.2.58
+#  En 0.2.66 sin group_by: MultiIndex es (field, ticker) → raw["Close"]["SPY"]
+#  En 0.2.66 con group_by="ticker": MultiIndex es (ticker, field) → raw["SPY"]["Close"]
+#  Esta función detecta el formato y accede correctamente en ambos casos.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _get_closes(raw: pd.DataFrame, sym: str, n_tickers: int) -> pd.Series:
+    """Extrae la serie Close para `sym` de un DataFrame de yf.download."""
+    if n_tickers == 1:
+        # Un solo ticker: siempre raw["Close"] (puede ser MultiIndex o no)
+        if isinstance(raw.columns, pd.MultiIndex):
+            return raw["Close"].iloc[:, 0]
+        return raw["Close"]
+
+    if isinstance(raw.columns, pd.MultiIndex):
+        level0 = raw.columns.get_level_values(0).tolist()
+        if "Close" in level0:
+            # Formato nuevo (field, ticker): raw["Close"]["SPY"]
+            return raw["Close"][sym]
+        else:
+            # Formato viejo (ticker, field): raw["SPY"]["Close"]
+            return raw[sym]["Close"]
+    else:
+        # Fallback plano
+        return raw[sym]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 #  FIELD NORMALIZATION — data912 returns varying field names
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -584,24 +612,19 @@ FX_TICKERS = {
 
 @st.cache_data(ttl=TTL, show_spinner=False)
 def get_yf_quotes(tickers_dict: dict):
+    """Batch yfinance quotes — compatible con yfinance 0.2.58+."""
     symbols = list(tickers_dict.values())
     names   = list(tickers_dict.keys())
+    n = len(symbols)
     try:
         raw = yf.download(
-            symbols, period="2d", interval="1d", group_by="ticker",
+            symbols, period="2d", interval="1d",
             auto_adjust=True, progress=False, threads=True,
         )
         result = {}
         for name, sym in zip(names, symbols):
             try:
-                if len(symbols) == 1:
-                    closes = raw["Close"]
-                else:
-                    try:
-                        closes = raw[sym]["Close"]
-                    except (KeyError, TypeError):
-                        closes = raw["Close"][sym]
-                closes = closes.dropna()
+                closes = _get_closes(raw, sym, n).dropna()
                 if len(closes) >= 2:
                     price = float(closes.iloc[-1])
                     prev  = float(closes.iloc[-2])
@@ -805,20 +828,3 @@ def get_news_international():
 @st.cache_data(ttl=NEWS_TTL, show_spinner=False)
 def get_news_argentina():
     return _interleave(_news_ambito(), _news_bloomberglinea(), _news_infobae(), _news_cronista(), _news_iprofesional())
-@st.cache_data(ttl=TTL, show_spinner=False)
-def get_eco_bonos_by_index(table_index: int):
-    html = get_ecovalores_raw()
-    if not html:
-        return None
-    try:
-        from io import StringIO
-        tables = pd.read_html(StringIO(html), flavor="lxml")
-        if table_index >= len(tables):
-            return None
-        df = tables[table_index]
-        if hasattr(df.columns, 'levels'):
-            df.columns = df.columns.get_level_values(0)
-        df.columns = [str(c).strip() for c in df.columns]
-        return df.dropna(how="all").reset_index(drop=True)
-    except Exception:
-        return None
