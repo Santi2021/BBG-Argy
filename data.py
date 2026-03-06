@@ -805,3 +805,20 @@ def get_news_international():
 @st.cache_data(ttl=NEWS_TTL, show_spinner=False)
 def get_news_argentina():
     return _interleave(_news_ambito(), _news_bloomberglinea(), _news_infobae(), _news_cronista(), _news_iprofesional())
+@st.cache_data(ttl=TTL, show_spinner=False)
+def get_eco_bonos_by_index(table_index: int):
+    html = get_ecovalores_raw()
+    if not html:
+        return None
+    try:
+        from io import StringIO
+        tables = pd.read_html(StringIO(html), flavor="lxml")
+        if table_index >= len(tables):
+            return None
+        df = tables[table_index]
+        if hasattr(df.columns, 'levels'):
+            df.columns = df.columns.get_level_values(0)
+        df.columns = [str(c).strip() for c in df.columns]
+        return df.dropna(how="all").reset_index(drop=True)
+    except Exception:
+        return None
