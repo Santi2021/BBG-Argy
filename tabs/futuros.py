@@ -135,16 +135,19 @@ def render():
     #  CURVA COMBINADA: ROFEX + CAUCIONES + LETRAS
     # ════════════════════════════════════════════════════════════════
 
-    # ── Cauciones ──
-    cauc_pts = []
+    # ── Cauciones — solo plazos estándar, una tasa por plazo ──
+    PLAZOS_STD = {1, 7, 14, 30, 60, 90}
+    cauc_by_plazo = {}
     for c in (cauciones or []):
         try:
             plazo = int("".join(filter(str.isdigit, c.get("plazo", ""))))
             tasa = float(c.get("tasa", 0))
-            if tasa > 0:
-                cauc_pts.append((plazo, tasa, f"{plazo}d"))
+            if tasa > 0 and plazo in PLAZOS_STD:
+                if plazo not in cauc_by_plazo or tasa > cauc_by_plazo[plazo]:
+                    cauc_by_plazo[plazo] = tasa
         except Exception:
             pass
+    cauc_pts = sorted([(k, v, f"{k}d") for k, v in cauc_by_plazo.items()], key=lambda x: x[0])
 
     # ── Letras capitalizables (S/T prefix, TNA > 0) ──
     hoy = date.today().isoformat()
