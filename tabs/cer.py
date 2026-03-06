@@ -170,55 +170,67 @@ def _resolve_text_positions(points):
     return positions
 
 
-def _yield_curve(bonds):
-    pts = [b for b in bonds if b["tir"] is not None and b["dur"] is not None and b["dur"] > 0]
-    if len(pts) < 2:
+def _add_series(fig, pts, color, name, show_fit=True):
+    """Agrega una serie al gráfico: puntos + etiquetas + curva ajustada opcional."""
+    if not pts:
         return
-
-    pts.sort(key=lambda b: b["dur"])
+    pts = sorted(pts, key=lambda p: p["dur"])
     durs   = [p["dur"]     for p in pts]
     tirs   = [p["tir"]     for p in pts]
     labels = [p["especie"] for p in pts]
 
-    fig = go.Figure()
-
-    # Fitted curve
-    try:
-        deg = min(2, len(pts) - 1)
-        coeffs  = np.polyfit(durs, tirs, deg)
-        poly    = np.poly1d(coeffs)
-        x_smooth = np.linspace(min(durs) * 0.85, max(durs) * 1.08, 80)
-        fig.add_trace(go.Scatter(
-            x=x_smooth, y=poly(x_smooth),
-            mode="lines",
-            line=dict(color="#ff6600", width=1.5, dash="dot"),
-            hoverinfo="skip", showlegend=False,
-        ))
-    except Exception:
-        pass
+    if show_fit and len(pts) >= 2:
+        try:
+            deg = min(2, len(pts) - 1)
+            coeffs = np.polyfit(durs, tirs, deg)
+            poly   = np.poly1d(coeffs)
+            x_smooth = np.linspace(min(durs) * 0.85, max(durs) * 1.08, 80)
+            fig.add_trace(go.Scatter(
+                x=x_smooth, y=poly(x_smooth),
+                mode="lines",
+                line=dict(color=color, width=1.2, dash="dot"),
+                hoverinfo="skip", showlegend=False,
+            ))
+        except Exception:
+            pass
 
     text_pos = _resolve_text_positions(pts)
-
     fig.add_trace(go.Scatter(
         x=durs, y=tirs,
         mode="markers+text",
-        marker=dict(color="#00ff41", size=8, line=dict(color="#222", width=0.8)),
+        name=name,
+        marker=dict(color=color, size=8, line=dict(color="#111", width=0.8)),
         text=labels,
         textposition=text_pos,
-        textfont=dict(size=7, color="#00ff41", family="Courier New"),
-        hovertemplate="<b>%{text}</b><br>Dur: %{x:.1f}<br>TIR: %{y:.1f}%<extra></extra>",
+        textfont=dict(size=7, color=color, family="Courier New"),
+        hovertemplate=f"<b>%{{text}}</b><br>Dur: %{{x:.1f}}<br>TIR: %{{y:.1f}}%<extra>{name}</extra>",
     ))
 
-    tir_pad = (max(tirs) - min(tirs)) * 0.25 or 2
-    dur_pad = (max(durs) - min(durs)) * 0.10 or 1
+
+def _yield_curve_combined(cer_bonds, sov_bonds):
+    cer_pts = [b for b in cer_bonds if b["tir"] and b["dur"] and b["dur"] > 0]
+    sov_pts = [b for b in sov_bonds if b["tir"] and b["dur"] and b["dur"] > 0]
+
+    all_pts = cer_pts + sov_pts
+    if len(all_pts) < 2:
+        return
+
+    fig = go.Figure()
+    _add_series(fig, cer_pts, "#00ff41", "CER",      show_fit=True)
+    _add_series(fig, sov_pts, "#ff6600", "ALs / GDs", show_fit=True)
+
+    all_tirs = [p["tir"] for p in all_pts]
+    all_durs = [p["dur"] for p in all_pts]
+    tir_pad  = (max(all_tirs) - min(all_tirs)) * 0.20 or 2
+    dur_pad  = (max(all_durs) - min(all_durs)) * 0.08 or 1
 
     fig.update_layout(
         paper_bgcolor="#000", plot_bgcolor="#000",
         font=dict(family="Courier New", size=9, color="#555"),
         margin=dict(l=45, r=15, t=35, b=40),
-        height=320,
+        height=380,
         title=dict(
-            text="CURVA TIR vs DURACIÓN · BONOS CER",
+            text="CURVA TIR vs DURACIÓN · CER  vs  ALs / GDs",
             font=dict(family="Courier New", size=10, color="#ff6600"),
             x=0.01, xanchor="left",
         ),
@@ -226,16 +238,21 @@ def _yield_curve(bonds):
             title=dict(text="DURACIÓN", font=dict(size=8, color="#ff6600")),
             gridcolor="#111", linecolor="#333", zerolinecolor="#333",
             tickfont=dict(size=8, color="#555", family="Courier New"),
-            range=[min(durs) - dur_pad, max(durs) + dur_pad],
+            range=[min(all_durs) - dur_pad, max(all_durs) + dur_pad],
         ),
         yaxis=dict(
             title=dict(text="TIR %", font=dict(size=8, color="#ff6600")),
             gridcolor="#111", linecolor="#333", zerolinecolor="#333",
             tickfont=dict(size=8, color="#555", family="Courier New"),
             ticksuffix="%",
-            range=[min(tirs) - tir_pad, max(tirs) + tir_pad],
+            range=[min(all_tirs) - tir_pad, max(all_tirs) + tir_pad],
         ),
-        showlegend=False,
+        legend=dict(
+            bgcolor="rgba(0,0,0,0.7)", bordercolor="#333", borderwidth=1,
+            font=dict(size=9, color="#ccc", family="Courier New"),
+            orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
+        ),
+        showlegend=True,
         hoverlabel=dict(
             bgcolor="#111", bordercolor="#ff6600",
             font=dict(family="Courier New", size=9, color="#fff"),
@@ -253,14 +270,15 @@ def render():
     subtabs = st.tabs(["BONOS CER", "BREAKEVEN"])
 
     with st.spinner(""):
-        df_cer = get_eco_bonos_by_index(8)
-        bonds  = _parse_cer_df(df_cer)
+        df_cer = get_eco_bonos_by_index(8)   # CER
+        df_sov = get_eco_bonos_by_index(19)  # Soberanos USD en ARS (AL/GD)
+        cer_bonds = _parse_cer_df(df_cer)
+        sov_bonds = _parse_cer_df(df_sov)   # misma estructura de 7 columnas
 
     with subtabs[0]:
         st.markdown('<div class="sh">BONOS AJUSTADOS POR CER · ECOVALORES</div>', unsafe_allow_html=True)
-        _tabla_cer(bonds)
-        if bonds:
-            _yield_curve(bonds)
+        _tabla_cer(cer_bonds)
+        _yield_curve_combined(cer_bonds, sov_bonds)
 
     with subtabs[1]:
         st.markdown("""
