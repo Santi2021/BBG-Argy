@@ -6,11 +6,12 @@ MUNDO — 9-Panel Grid (equity-focused)
 """
 import streamlit as st
 import yfinance as yf
+import pandas as pd
 import requests
 import re
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from data import fmt_price, fmt_change, HEADERS
+from data import fmt_price, fmt_change, HEADERS, _get_closes
 
 TTL = 60
 
@@ -49,7 +50,6 @@ def _panel_html(title, headers, rows_html, max_height=340):
 #  ETF DEFINITIONS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# Country ETFs — iShares MSCI single-country (+ SPY for US)
 COUNTRY_ETFS = {
     "SPY":  "🇺🇸 USA",
     "EWC":  "🇨🇦 Canada",
@@ -82,7 +82,6 @@ COUNTRY_ETFS = {
     "VNM":  "🇻🇳 Vietnam",
 }
 
-# Sector ETFs — State Street SPDR Select Sector
 SECTOR_ETFS = {
     "XLK":  "Technology",
     "XLF":  "Financials",
@@ -97,7 +96,6 @@ SECTOR_ETFS = {
     "XLC":  "Comm. Services",
 }
 
-# Industry ETFs — diversified providers, no repeats with sector
 INDUSTRY_ETFS = {
     "ITA":  "Aerospace/Def",
     "IBB":  "Biotech",
@@ -128,37 +126,31 @@ INDUSTRY_ETFS = {
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  YFINANCE BATCH QUOTES
+#  YFINANCE BATCH — compatible con 0.2.58+ (MultiIndex field-first)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @st.cache_data(ttl=TTL, show_spinner=False)
 def _yf_batch(tickers: list):
-    """Returns dict {ticker: {price, change_pct}}"""
+    """Returns dict {ticker: {price, change_pct}} — robust para yfinance >= 0.2.58."""
     if not tickers:
         return {}
+    n = len(tickers)
     try:
         raw = yf.download(
-            tickers, period="2d", interval="1d", group_by="ticker",
+            tickers, period="2d", interval="1d",
             auto_adjust=True, progress=False, threads=True,
         )
         result = {}
         for sym in tickers:
             try:
-                if len(tickers) == 1:
-                    closes = raw["Close"]
-                else:
-                    try:
-                        closes = raw[sym]["Close"]
-                    except (KeyError, TypeError):
-                        closes = raw["Close"][sym]
-                closes = closes.dropna()
+                closes = _get_closes(raw, sym, n).dropna()
                 if len(closes) >= 2:
                     price = float(closes.iloc[-1])
-                    prev = float(closes.iloc[-2])
-                    chg = (price - prev) / prev * 100
+                    prev  = float(closes.iloc[-2])
+                    chg   = (price - prev) / prev * 100
                 else:
                     price = float(closes.iloc[-1]) if len(closes) else None
-                    chg = 0.0
+                    chg   = 0.0
                 result[sym] = {"price": price, "change_pct": round(chg, 2)}
             except Exception:
                 result[sym] = {"price": None, "change_pct": 0.0}
@@ -171,7 +163,6 @@ def _yf_batch(tickers: list):
 #  SCRAPE TOP 78 COMPANIES BY MARKET CAP
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# Hardcoded top 78 as fallback (tickers from companiesmarketcap.com, Feb 2026)
 TOP78_FALLBACK = [
     ("NVDA", "NVIDIA"), ("AAPL", "Apple"), ("GOOG", "Alphabet"),
     ("MSFT", "Microsoft"), ("AMZN", "Amazon"), ("TSM", "TSMC"),
@@ -215,7 +206,6 @@ COMPANIES_PER_PANEL = 13
 
 @st.cache_data(ttl=300, show_spinner=False)
 def _scrape_top78():
-    """Scrape top 78 companies from companiesmarketcap.com. Returns [(ticker, name, country), ...]"""
     try:
         from bs4 import BeautifulSoup
         r = requests.get("https://companiesmarketcap.com/", headers=HEADERS, timeout=12)
@@ -266,7 +256,6 @@ def _scrape_top78():
 
 
 def _get_top_companies():
-    """Get top companies — try scraping, fallback to hardcoded."""
     scraped = _scrape_top78()
     if scraped:
         return scraped
@@ -278,7 +267,6 @@ def _get_top_companies():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _build_etf_panel(etf_dict, quotes):
-    """Build rows for ETF panel: TICKER | PRECIO | % DIA | DESC"""
     rows = ""
     for ticker, desc in etf_dict.items():
         q = quotes.get(ticker, {})
@@ -289,7 +277,6 @@ def _build_etf_panel(etf_dict, quotes):
 
 
 def _build_company_panel(companies, quotes, start_rank=1):
-    """Build rows for company panel: # | TICKER | NOMBRE | PRECIO | % DIA"""
     rows = ""
     for i, entry in enumerate(companies):
         ticker = entry[0]
@@ -327,8 +314,8 @@ def render():
         quotes = _yf_batch(unique_tickers)
 
     # Build ETF panels
-    r_countries = _build_etf_panel(COUNTRY_ETFS, quotes)
-    r_sectors = _build_etf_panel(SECTOR_ETFS, quotes)
+    r_countries  = _build_etf_panel(COUNTRY_ETFS,  quotes)
+    r_sectors    = _build_etf_panel(SECTOR_ETFS,   quotes)
     r_industries = _build_etf_panel(INDUSTRY_ETFS, quotes)
 
     # Build company panels — 13 per panel
@@ -341,17 +328,17 @@ def render():
 
     PH = 340
 
-    p1 = _panel_html("PAÍSES · ETFs iSHARES", ["TICKER","PRECIO","% DIA","PAÍS"], r_countries, PH)
-    p2 = _panel_html("SECTORES · SPDR", ["TICKER","PRECIO","% DIA","SECTOR"], r_sectors, PH)
-    p3 = _panel_html("INDUSTRIAS · ETFs", ["TICKER","PRECIO","% DIA","INDUSTRIA"], r_industries, PH)
+    p1 = _panel_html("PAÍSES · ETFs iSHARES",  ["TICKER","PRECIO","% DIA","PAÍS"],     r_countries,  PH)
+    p2 = _panel_html("SECTORES · SPDR",         ["TICKER","PRECIO","% DIA","SECTOR"],   r_sectors,    PH)
+    p3 = _panel_html("INDUSTRIAS · ETFs",        ["TICKER","PRECIO","% DIA","INDUSTRIA"],r_industries, PH)
 
-    p4 = _panel_html(f"STOCKS · #1-{N}", ["#","TICKER","NOMBRE","PRECIO","% DIA"], r_co1, PH)
-    p5 = _panel_html(f"STOCKS · #{N+1}-{2*N}", ["#","TICKER","NOMBRE","PRECIO","% DIA"], r_co2, PH)
-    p6 = _panel_html(f"STOCKS · #{2*N+1}-{3*N}", ["#","TICKER","NOMBRE","PRECIO","% DIA"], r_co3, PH)
+    p4 = _panel_html(f"STOCKS · #1-{N}",          ["#","TICKER","NOMBRE","PRECIO","% DIA"], r_co1, PH)
+    p5 = _panel_html(f"STOCKS · #{N+1}-{2*N}",    ["#","TICKER","NOMBRE","PRECIO","% DIA"], r_co2, PH)
+    p6 = _panel_html(f"STOCKS · #{2*N+1}-{3*N}",  ["#","TICKER","NOMBRE","PRECIO","% DIA"], r_co3, PH)
 
-    p7 = _panel_html(f"STOCKS · #{3*N+1}-{4*N}", ["#","TICKER","NOMBRE","PRECIO","% DIA"], r_co4, PH)
-    p8 = _panel_html(f"STOCKS · #{4*N+1}-{5*N}", ["#","TICKER","NOMBRE","PRECIO","% DIA"], r_co5, PH)
-    p9 = _panel_html(f"STOCKS · #{5*N+1}-{6*N}", ["#","TICKER","NOMBRE","PRECIO","% DIA"], r_co6, PH)
+    p7 = _panel_html(f"STOCKS · #{3*N+1}-{4*N}",  ["#","TICKER","NOMBRE","PRECIO","% DIA"], r_co4, PH)
+    p8 = _panel_html(f"STOCKS · #{4*N+1}-{5*N}",  ["#","TICKER","NOMBRE","PRECIO","% DIA"], r_co5, PH)
+    p9 = _panel_html(f"STOCKS · #{5*N+1}-{6*N}",  ["#","TICKER","NOMBRE","PRECIO","% DIA"], r_co6, PH)
 
     grid_html = f"""
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;grid-template-rows:auto auto auto;gap:4px;margin-top:4px">
