@@ -193,57 +193,53 @@ def _build_bonos():
 
 def _build_letras():
     """
-    Letras ARS — fuente primaria PPI (tiene TNA real), fallback data912.
-    Columnas: TICKER | MKT | PRECIO | % DIA | TNA | VTO
+    Letras ARS — una letra representativa por mes de vencimiento.
+    Seleccion automatica: mayor volumen por mes, solo ARS con TNA valida.
+    Ordenadas por fecha para construir curva de rendimientos.
+    Columnas: TICKER | PRECIO | % DIA | TNA | VTO
     """
-    # Fuente primaria: PPI
+    from datetime import date
+
     ppi = get_letras_ppi()
-    by_ticker = {}
-    for item in (ppi or []):
-        if item.get("currency") == "ARS":
-            by_ticker[item.get("ticker", "")] = item
-
-    # Fallback: data912 (sin TNA)
-    if not by_ticker:
-        for item in (get_letras() or []):
-            tk = item.get("ticker", "")
-            if tk not in by_ticker:
-                by_ticker[tk] = item
-        for item in (get_bonos_ars() or []):
-            tk = item.get("ticker", "")
-            if tk not in by_ticker:
-                by_ticker[tk] = item
-
-    LETRAS_ORDER = [
-        "S16M6", "S17A6", "S30A6", "S29Y6", "T30J6", "S31L6",
-        "S31G6", "S30O6", "S30N6", "T15E7", "T30A7", "T31Y7", "T30J7",
+    candidatos = [
+        item for item in (ppi or [])
+        if item.get("currency") == "ARS"
+        and item.get("tna") is not None
+        and item.get("expiration_date")
+        and item.get("last", 0) > 0
     ]
 
+    # Una letra por mes: la de mayor volumen operado
+    by_month = {}
+    for item in candidatos:
+        mes = item["expiration_date"][:7]  # "YYYY-MM"
+        vol = item.get("volume", 0) or 0
+        if mes not in by_month or vol > (by_month[mes].get("volume") or 0):
+            by_month[mes] = item
+
+    # Ordenar por vencimiento y filtrar vencidas
+    hoy = date.today().isoformat()
+    curva = sorted(
+        [x for x in by_month.values() if x["expiration_date"] >= hoy],
+        key=lambda x: x["expiration_date"]
+    )
+
     rows = ""
-    for tk in LETRAS_ORDER:
-        item = by_ticker.get(tk)
-        if item:
-            p = item.get("last") or item.get("price")
-            chg = item.get("pct_change", 0)
-            tna = item.get("tna")
-            vto = item.get("expiration_date", "")
+    for item in curva:
+        tk = item["ticker"]
+        p = item["last"]
+        chg = item.get("pct_change", 0)
+        tna = item["tna"]
+        vto = item["expiration_date"]
 
-            p_s = fmt_price(p) if p else "—"
+        p_s = fmt_price(p) if p else "—"
+        tna_s = f'<span style="color:#ff6600;font-weight:bold">{tna:.1f}%</span>'
+        vto_s = f'<span style="color:#555;font-size:9px">{vto[5:7]}/{vto[2:4]}</span>'
 
-            if tna is not None:
-                tna_s = f'<span style="color:#ff6600;font-weight:bold">{tna:.1f}%</span>'
-            else:
-                tna_s = '<span style="color:#555">—</span>'
+        rows += f'<tr><td>{tk}</td><td style="color:#ffcc00">{p_s}</td><td>{_pct_html(chg)}</td><td>{tna_s}</td><td>{vto_s}</td></tr>'
 
-            # VTO: MM/YY
-            if vto and len(vto) >= 7:
-                vto_s = f'<span style="color:#555;font-size:9px">{vto[5:7]}/{vto[2:4]}</span>'
-            else:
-                vto_s = '<span style="color:#555">—</span>'
-
-            rows += f'<tr><td>{tk}</td><td class="mkt">BYMA</td><td style="color:#ffcc00">{p_s}</td><td>{_pct_html(chg)}</td><td>{tna_s}</td><td>{vto_s}</td></tr>'
-        else:
-            rows += f'<tr><td>{tk}</td><td class="mkt">BYMA</td><td style="color:#555">—</td><td style="color:#555">—</td><td style="color:#555">—</td><td style="color:#555">—</td></tr>'
+    if not rows:
+        rows = '<tr><td colspan="5" style="color:#555">Sin datos PPI</td></tr>'
 
     return rows
 
@@ -301,7 +297,7 @@ def render():
 
     p1 = _panel_html("CAUCIONES", ["PLAZO","TNA","VOLUMEN"], r_cau, PH)
     p2 = _panel_html("FUTUROS DÓLAR", ["CONTRATO","ÚLTIMO","TNA"], r_fut, PH)
-    p3 = _panel_html("LETRAS EN ARS · PPI", ["TICKER","MKT","PRECIO","% DIA","TNA","VTO"], r_let, PH)
+    p3 = _panel_html("LETRAS EN ARS · PPI", ["TICKER","PRECIO","% DIA","TNA","VTO"], r_let, PH)
 
     p4 = _panel_html("BONOS SOBERANOS", ["BONO","PRECIO","Δ DIA","YIELD","DUR"], r_bon, PH)
     p5 = _panel_html("CORPORATIVOS", ["BONO","PRECIO","Δ DIA","YIELD","DUR"], r_corp, PH)
