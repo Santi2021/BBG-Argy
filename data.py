@@ -610,15 +610,28 @@ FX_TICKERS = {
 }
 
 
+def _prev_close_fallback(sym: str) -> float | None:
+    """Obtiene previousClose via fast_info — usado cuando download solo devuelve 1 fila."""
+    try:
+        fi = yf.Ticker(sym).fast_info
+        return float(fi.get("previous_close") or fi.get("previousClose") or 0) or None
+    except Exception:
+        return None
+
+
 @st.cache_data(ttl=TTL, show_spinner=False)
 def get_yf_quotes(tickers_dict: dict):
-    """Batch yfinance quotes — compatible con yfinance 0.2.58+."""
+    """
+    Batch yfinance quotes — compatible con yfinance 0.2.58+.
+    Usa period='5d' para tener buffer ante feriados/liquidez baja.
+    Fallback a fast_info.previous_close si download devuelve < 2 filas.
+    """
     symbols = list(tickers_dict.values())
     names   = list(tickers_dict.keys())
     n = len(symbols)
     try:
         raw = yf.download(
-            symbols, period="2d", interval="1d",
+            symbols, period="5d", interval="1d",
             auto_adjust=True, progress=False, threads=True,
         )
         result = {}
@@ -629,15 +642,20 @@ def get_yf_quotes(tickers_dict: dict):
                     price = float(closes.iloc[-1])
                     prev  = float(closes.iloc[-2])
                     chg   = (price - prev) / prev * 100
+                elif len(closes) == 1:
+                    price = float(closes.iloc[-1])
+                    # Fallback: buscar previousClose via fast_info
+                    prev = _prev_close_fallback(sym)
+                    chg  = (price - prev) / prev * 100 if prev else 0.0
                 else:
-                    price = float(closes.iloc[-1]) if len(closes) else None
+                    price = None
                     chg   = 0.0
                 result[name] = {"price": price, "change_pct": round(chg, 2), "symbol": sym}
             except Exception:
                 result[name] = {"price": None, "change_pct": 0.0, "symbol": sym}
         return result
     except Exception:
-        return {n: {"price": None, "change_pct": 0.0} for n in names}
+        return {name: {"price": None, "change_pct": 0.0} for name in names}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
