@@ -664,7 +664,7 @@ def _render_labor():
     fig_sec.add_hline(y=0, line_color="#333", line_width=1)
     lay_sec = _layout(460)
     lay_sec["barmode"] = "relative"
-    lay_sec["margin"] = dict(l=55, r=20, t=110, b=36)
+    lay_sec["margin"] = dict(l=55, r=20, t=140, b=36)
     lay_sec["legend"] = dict(
         bgcolor="rgba(0,0,0,0)",
         font=dict(color=TEXT, size=9, family="Courier New"),
