@@ -30,7 +30,6 @@ VIOLET  = "#a78bfa"
 AMBER   = "#f59e0b"
 WHITE   = "#ffffff"
 
-FED_TARGET = 2.0
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  API KEYS
@@ -49,10 +48,10 @@ def _layout(height=360):
         plot_bgcolor=BG2,
         font=dict(family="'Courier New', monospace", color=TEXT, size=11),
         xaxis=dict(gridcolor=GRID, linecolor=GRID, showgrid=False,
-                   tickfont=dict(size=9, color=MUTED)),
+                   tickfont=dict(size=9, color='#aaaaaa')),
         yaxis=dict(gridcolor=GRID, linecolor=GRID, zeroline=True,
                    zerolinecolor="#333",
-                   tickfont=dict(size=9, color=MUTED)),
+                   tickfont=dict(size=9, color='#aaaaaa')),
         hovermode="x unified",
         barmode="relative",
         height=height,
@@ -83,7 +82,7 @@ def _layout_sub(height=340):
 def _style_sub_axes(fig, secondary=True):
     """Apply BBG grid style to all axes of a subplot figure."""
     ax_style = dict(gridcolor=GRID, linecolor=GRID, zeroline=False,
-                    tickfont=dict(size=9, color=MUTED), title_text=None,
+                    tickfont=dict(size=9, color='#aaaaaa'), title_text=None,
                     showgrid=True)
     fig.update_xaxes(**ax_style)
     fig.update_yaxes(**ax_style)
@@ -92,7 +91,7 @@ def _sec(text):
     st.markdown(
         f'<div style="color:{ORANGE};font-size:9px;font-weight:bold;letter-spacing:2px;'
         f'text-transform:uppercase;border-bottom:1px solid #333;padding-bottom:3px;'
-        f'margin:10px 0 6px 0;font-family:\'Courier New\',monospace">{text}</div>',
+        f'margin:18px 0 6px 0;font-family:\'Courier New\',monospace">{text}</div>',
         unsafe_allow_html=True
     )
 
@@ -285,8 +284,8 @@ GDP_CODES = {
 }
 GDP_COLORS = {
     "consumption":"#3b82f6","investment":"#00ff41","government":GOLD,"net_exports":RED,
-    "durables":"#60a5fa","nondurables":"#93c5fd","services":"#1d4ed8",
-    "residential":"#34d399","nonresidential":"#6ee7b7","inventories":"#064e3b",
+    "durables":"#f59e0b","nondurables":"#f97316","services":"#3b82f6",
+    "residential":"#34d399","nonresidential":"#f59e0b","inventories":"#a78bfa",
     "federal":"#fbbf24","state_local":"#92400e","exports":"#4ade80","imports":"#f87171",
     "final_sales":VIOLET,"inv_change":"#7c3aed",
 }
@@ -619,7 +618,7 @@ def _render_labor():
         t = _trim(s.dropna(), SECTOR_CUT)
         if len(t):
             fig_sec.add_trace(go.Bar(
-                name=label, x=t.index, y=t.values / 1000,
+                name=label, x=t.index, y=t.values,
                 marker_color=color, marker_line_width=0,
                 hovertemplate=f"<b>{label}</b>: %{{y:+.0f}}K<extra></extra>",
             ))
@@ -627,7 +626,7 @@ def _render_labor():
     tot_t = _trim(total_nfp.dropna(), SECTOR_CUT)
     if len(tot_t):
         fig_sec.add_trace(go.Scatter(
-            name="Total NFP", x=tot_t.index, y=tot_t.values / 1000,
+            name="Total NFP", x=tot_t.index, y=tot_t.values,
             line=dict(color=WHITE, width=2),
             mode="lines",
             hovertemplate="<b>Total NFP</b>: %{y:+.0f}K<extra></extra>",
@@ -639,7 +638,6 @@ def _render_labor():
     st.plotly_chart(fig_sec, use_container_width=True, config={"displayModeBar": False})
 
     # ── Integrated data table below chart — pure HTML, Bloomberg style ──────
-    _sec("DATA TABLE — SECTOR MoM NET CHANGE (000s)")
 
     # Build last N months columns
     N_MONTHS = 8
@@ -728,17 +726,15 @@ def _render_labor():
     _sec("AVERAGE HOURLY EARNINGS — YoY %")
 
     fig4 = go.Figure()
-    fig4.add_hrect(y0=3.0, y1=3.5, fillcolor=GREEN, opacity=0.07,
-                   line_width=0, annotation_text="Fed comfort zone",
-                   annotation_position="top right",
-                   annotation_font=dict(color=GREEN, size=9))
     fig4.add_trace(go.Scatter(
         name="AHE YoY%", x=wages_yoy_t.index, y=wages_yoy_t.values,
         line=dict(color=AMBER, width=2.5),
-        fill="tozeroy", fillcolor="rgba(245,158,11,0.08)",
         hovertemplate="<b>Wages YoY</b>: %{y:.2f}%<extra></extra>",
     ))
-    fig4.update_layout(**_layout(300))
+    lay4 = _layout(240)
+    lay4['yaxis']['autorange'] = True
+    lay4['yaxis']['rangemode'] = 'normal'
+    fig4.update_layout(**lay4)
     st.plotly_chart(fig4, use_container_width=True, config={"displayModeBar": False})
 
     # ── Section 5: JOLTS ────────────────────────────────────────────────────
@@ -884,7 +880,7 @@ def _render_inflation():
         (f"{l_cpi:.1f}%"      if l_cpi      else "—", "CPI HEADLINE",  f"prev {_prv(cpi_all_yoy):.1f}%" if _prv(cpi_all_yoy) else "", _ic(l_cpi)),
         (f"{l_core:.1f}%"     if l_core     else "—", "CORE CPI",      "ex Food & Energy",   _ic(l_core)),
         (f"{l_pce:.1f}%"      if l_pce      else "—", "PCE HEADLINE",  f"prev {_prv(pce_yoy):.1f}%" if _prv(pce_yoy) else "",         _ic(l_pce)),
-        (f"{l_pce_core:.1f}%" if l_pce_core else "—", "CORE PCE",      "Fed target: 2.0%",   _ic(l_pce_core)),
+        (f"{l_pce_core:.1f}%" if l_pce_core else "—", "CORE PCE",      "PCE preferred gauge",   _ic(l_pce_core)),
         (f"{l_be5:.2f}%"      if l_be5      else "—", "5Y BREAKEVEN",  "TIPS market",        CYAN),
         (f"{l_mich:.1f}%"     if l_mich     else "—", "MICH 1Y EXPEC", "consumer survey",    VIOLET),
     ])
@@ -893,8 +889,6 @@ def _render_inflation():
     _sec(f"CPI · PCE · CORE — YoY%  ·  {latest_date}")
 
     fig1 = go.Figure()
-    fig1.add_hline(y=FED_TARGET, line_color=GREEN, line_width=1, line_dash="dot",
-                   annotation_text="Fed 2%", annotation_font=dict(color=GREEN, size=9))
     for name, s, color, dash in [
         ("CPI Headline", cpi_all_yoy,  ORANGE, "solid"),
         ("Core CPI",     cpi_core_yoy, GOLD,   "dash"),
@@ -969,7 +963,6 @@ def _render_inflation():
             mode="lines", line=dict(color=WHITE, width=2),
             hovertemplate="<b>CPI Total</b>: %{y:.2f}%<extra></extra>",
         ))
-        fig2.add_hline(y=FED_TARGET, line_color=GREEN, line_width=1, line_dash="dot")
         l2 = _layout(380)
         fig2.update_layout(**l2)
         st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})
@@ -982,8 +975,6 @@ def _render_inflation():
     core_ex_shelter = (cpi_core_yoy - SHELTER_W * shelter_yoy) / (1 - SHELTER_W)
 
     fig3 = go.Figure()
-    fig3.add_hline(y=FED_TARGET, line_color=GREEN, line_width=1, line_dash="dot",
-                   annotation_text="2%", annotation_font=dict(color=GREEN, size=9))
     for name, s, color, dash in [
         ("Shelter",          trim(shelter_yoy.dropna()),     BLUE,   "solid"),
         ("Core CPI",         trim(cpi_core_yoy.dropna()),    GOLD,   "dot"),
@@ -1004,8 +995,6 @@ def _render_inflation():
     exp_tabs = st.tabs(["TIPS Breakevens", "Michigan Survey"])
     with exp_tabs[0]:
         fig4a = go.Figure()
-        fig4a.add_hline(y=FED_TARGET, line_color=GREEN, line_width=1, line_dash="dot",
-                        annotation_text="2%", annotation_font=dict(color=GREEN, size=9))
         for name, key, color, dash in [
             ("5Y Breakeven",  "breakeven_5y",  CYAN,   "solid"),
             ("10Y Breakeven", "breakeven_10y", VIOLET, "dash"),
@@ -1022,7 +1011,6 @@ def _render_inflation():
 
     with exp_tabs[1]:
         fig4b = go.Figure()
-        fig4b.add_hline(y=FED_TARGET, line_color=GREEN, line_width=1, line_dash="dot")
         for name, key, color in [
             ("Michigan 1Y", "mich_1y", GOLD),
             ("Michigan 5Y", "mich_5y", BLUE),
