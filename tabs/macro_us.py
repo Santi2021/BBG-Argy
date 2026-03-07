@@ -123,13 +123,13 @@ def _infl_color(val):
 #  FRED HELPER
 # ═══════════════════════════════════════════════════════════════════════════════
 
+FRED_API_KEY = "3e448a2c51c7a8837aaf72757836a7b7"
+BEA_API_KEY_VAL  = "081DA2FC-1900-47A0-A40B-49C31925E395"
+BLS_API_KEY_VAL  = "94e0e0f57c5e4d5397ba3898198927ae"
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def _fred(series_id: str, start="2010-01-01") -> pd.Series:
-    api_key = os.getenv("FRED_API_KEY", "")
-    try:
-        api_key = st.secrets["FRED_API_KEY"]
-    except Exception:
-        pass
+    api_key = FRED_API_KEY
     url = (
         f"https://api.stlouisfed.org/fred/series/observations"
         f"?series_id={series_id}&observation_start={start}"
@@ -149,11 +149,7 @@ def _fred(series_id: str, start="2010-01-01") -> pd.Series:
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def _bea_nipa(table="T10102", freq="Q"):
-    api_key = os.getenv("BEA_API_KEY", "081DA2FC-1900-47A0-A40B-49C31925E395")
-    try:
-        api_key = st.secrets["BEA_API_KEY"]
-    except Exception:
-        pass
+    api_key = BEA_API_KEY_VAL
     url = (
         f"https://apps.bea.gov/api/data?UserID={api_key}"
         f"&method=GetData&DataSetName=NIPA"
@@ -190,16 +186,13 @@ def _bea_series(df, code):
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def _bls(series_ids: list, start_year=2010):
-    api_key = os.getenv("BLS_API_KEY", "")
-    try:
-        api_key = st.secrets["BLS_API_KEY"]
-    except Exception:
-        pass
+    from datetime import datetime as _dt
+    api_key = BLS_API_KEY_VAL
     url = "https://api.bls.gov/publicAPI/v2/timeseries/data/"
     payload = {
         "seriesid": series_ids,
         "startyear": str(start_year),
-        "endyear":   "2025",
+        "endyear":   str(_dt.now().year),
         "catalog":   False,
         "calculations": False,
         "annualaverage": False,
