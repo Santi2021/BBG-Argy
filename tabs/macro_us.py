@@ -376,54 +376,68 @@ def _render_gdp():
     _sec("DRILL-DOWN")
     dtabs = st.tabs(["Consumption", "Investment", "Government", "Net Exports", "Final Sales"])
 
+    def _drill_layout(subtitle):
+        """Layout for drill-down charts — legend below subtitle, no overlap."""
+        lay = _layout(320)
+        lay["margin"] = dict(l=55, r=20, t=62, b=36)
+        lay["legend"]["y"] = 1.0
+        lay["legend"]["yanchor"] = "bottom"
+        lay["annotations"] = [dict(
+            text=subtitle, xref="paper", yref="paper",
+            x=0, y=1.0, xanchor="left", yanchor="bottom",
+            font=dict(family="'Courier New',monospace", size=9, color="#888"),
+            showarrow=False,
+        )]
+        return lay
+
     with dtabs[0]:
-        st.markdown(f'<div style="font-family:\'Courier New\',monospace;font-size:10px;color:#888;margin-bottom:4px">Durables / Nondurables / Services · ◆ = Total PCE contribution</div>', unsafe_allow_html=True)
         fig = _stacked_fig([
             ("Durables",    _gs(df,GDP_CODES["durables"]),    GDP_COLORS["durables"]),
             ("Nondurables", _gs(df,GDP_CODES["nondurables"]), GDP_COLORS["nondurables"]),
             ("Services",    _gs(df,GDP_CODES["services"]),    GDP_COLORS["services"]),
         ], common, quarters)
         _add_diamond(fig, cons, common, quarters, "Total PCE")
-        st.plotly_chart(fig.update_layout(**_layout(300)), use_container_width=True, config={"displayModeBar": False})
+        fig.update_layout(**_drill_layout("Durables · Nondurables · Services   ◆ = Total PCE contribution"))
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     with dtabs[1]:
-        st.markdown(f'<div style="font-family:\'Courier New\',monospace;font-size:10px;color:#888;margin-bottom:4px">Residential / Nonresidential / Inventories · ◆ = Total Investment</div>', unsafe_allow_html=True)
         fig = _stacked_fig([
             ("Residential",    _gs(df,GDP_CODES["residential"]),    GDP_COLORS["residential"]),
             ("Nonresidential", _gs(df,GDP_CODES["nonresidential"]), GDP_COLORS["nonresidential"]),
             ("Inventories",    _gs(df,GDP_CODES["inventories"]),    GDP_COLORS["inventories"]),
         ], common, quarters)
         _add_diamond(fig, inv, common, quarters, "Total Investment")
-        st.plotly_chart(fig.update_layout(**_layout(300)), use_container_width=True, config={"displayModeBar": False})
+        fig.update_layout(**_drill_layout("Residential · Nonresidential · Inventories   ◆ = Total Investment"))
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     with dtabs[2]:
-        st.markdown(f'<div style="font-family:\'Courier New\',monospace;font-size:10px;color:#888;margin-bottom:4px">Federal / State & Local · ◆ = Total Government</div>', unsafe_allow_html=True)
         fig = _stacked_fig([
             ("Federal",       _gs(df,GDP_CODES["federal"]),     GDP_COLORS["federal"]),
             ("State & Local", _gs(df,GDP_CODES["state_local"]), GDP_COLORS["state_local"]),
         ], common, quarters)
         _add_diamond(fig, gov, common, quarters, "Total Government")
-        st.plotly_chart(fig.update_layout(**_layout(300)), use_container_width=True, config={"displayModeBar": False})
+        fig.update_layout(**_drill_layout("Federal · State & Local   ◆ = Total Government"))
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     with dtabs[3]:
-        st.markdown(f'<div style="font-family:\'Courier New\',monospace;font-size:10px;color:#888;margin-bottom:4px">Exports / Imports · ◆ = Net Exports</div>', unsafe_allow_html=True)
         fig = _stacked_fig([
             ("Exports", _gs(df,GDP_CODES["exports"]), GDP_COLORS["exports"]),
             ("Imports", _gs(df,GDP_CODES["imports"]), GDP_COLORS["imports"]),
         ], common, quarters)
         _add_diamond(fig, nx, common, quarters, "Net Exports")
-        st.plotly_chart(fig.update_layout(**_layout(300)), use_container_width=True, config={"displayModeBar": False})
+        fig.update_layout(**_drill_layout("Exports · Imports   ◆ = Net Exports"))
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     with dtabs[4]:
         inv_ch = _gs(df,GDP_CODES["inventories"]).reindex(common).fillna(0)
         fs     = gdp.reindex(common).fillna(0) - inv_ch
-        st.markdown(f'<div style="font-family:\'Courier New\',monospace;font-size:10px;color:#888;margin-bottom:4px">Final Sales vs Inventory Investment · ◆ = Total GDP</div>', unsafe_allow_html=True)
         fig = _stacked_fig([
             ("Final Sales",      fs,     GDP_COLORS["final_sales"]),
             ("Inventory Change", inv_ch, GDP_COLORS["inv_change"]),
         ], common, quarters)
         _add_diamond(fig, gdp.reindex(common), common, quarters, "Total GDP")
-        st.plotly_chart(fig.update_layout(**_layout(300)), use_container_width=True, config={"displayModeBar": False})
+        fig.update_layout(**_drill_layout("Final Sales · Inventory Change   ◆ = Total GDP"))
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     # Heatmap table — last 8 quarters — pure HTML Bloomberg style
     _sec("LAST 8 QUARTERS — CONTRIBUTIONS (pp)")
@@ -632,8 +646,17 @@ def _render_labor():
             hovertemplate="<b>Total NFP</b>: %{y:+.0f}K<extra></extra>",
         ))
     fig_sec.add_hline(y=0, line_color="#333", line_width=1)
-    lay_sec = _layout(340)
+    lay_sec = _layout(380)
     lay_sec["barmode"] = "relative"
+    lay_sec["margin"] = dict(l=55, r=20, t=80, b=36)
+    lay_sec["legend"] = dict(
+        bgcolor="rgba(0,0,0,0)",
+        font=dict(color=TEXT, size=9, family="Courier New"),
+        orientation="h",
+        yanchor="bottom", y=1.0,
+        xanchor="left", x=0,
+        tracegroupgap=0,
+    )
     fig_sec.update_layout(**lay_sec)
     st.plotly_chart(fig_sec, use_container_width=True, config={"displayModeBar": False})
 
