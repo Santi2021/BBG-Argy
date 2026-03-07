@@ -1203,33 +1203,63 @@ def _zq_ticker(year: int, month: int) -> str:
 @st.cache_data(ttl=3600, show_spinner=False)
 def _load_zq_history(start_date: str = "2024-01-01") -> dict:
     """
-    Descarga histórico de precios de cierre para los contratos ZQ
-    necesarios para cubrir los meetings FOMC.
-    Retorna dict {ticker: pd.Series}.
+    Descarga histórico de precios de cierre para los contratos ZQ.
+    Prueba múltiples formatos de ticker ya que Yahoo Finance es inconsistente:
+      ZQH25=F  (formato nuevo, 2 dígitos año)
+      ZQH5=F   (formato viejo, 1 dígito año)
+    Usa yf.Ticker().history() como método primario (más confiable que download()).
     """
     import yfinance as yf
-    today = pd.Timestamp.today()
-    # Necesitamos contratos desde start_date hasta ~18 meses adelante
+    today     = pd.Timestamp.today()
     contracts = {}
-    start = pd.Timestamp(start_date)
-    end   = today + pd.DateOffset(months=18)
-    cur   = pd.Timestamp(start.year, start.month, 1)
-    while cur <= end:
-        ticker = _zq_ticker(cur.year, cur.month)
+    start     = pd.Timestamp(start_date)
+    end       = today + pd.DateOffset(months=18)
+    cur       = pd.Timestamp(start.year, start.month, 1)
+
+    def _try_download(ticker: str) -> pd.Series | None:
+        """Intenta bajar con Ticker().history() y si falla con download()."""
+        # Método 1: Ticker().history() — más robusto ante MultiIndex
+        try:
+            t = yf.Ticker(ticker)
+            df = t.history(start=start_date, auto_adjust=True)
+            if df is not None and len(df) > 0 and "Close" in df.columns:
+                s = df["Close"].squeeze()
+                if hasattr(s, "dt"):  # es un DatetimeIndex
+                    return s.dropna()
+                return s.dropna()
+        except Exception:
+            pass
+        # Método 2: download() como fallback
         try:
             df = yf.download(ticker, start=start_date,
                              progress=False, auto_adjust=True)
             if df is not None and len(df) > 0:
-                # Handle MultiIndex from newer yfinance
                 if isinstance(df.columns, pd.MultiIndex):
-                    close = df["Close"].squeeze()
+                    close = df["Close"].xs(ticker, axis=1, level=1) \
+                            if ticker in df["Close"].columns else df["Close"].iloc[:, 0]
                 else:
-                    close = df["Close"].squeeze()
-                if isinstance(close, pd.DataFrame):
-                    close = close.iloc[:, 0]
-                contracts[ticker] = close.dropna()
+                    close = df["Close"]
+                return close.squeeze().dropna()
         except Exception:
             pass
+        return None
+
+    while cur <= end:
+        year2 = str(cur.year)[-2:]   # "25"
+        year1 = str(cur.year)[-1:]   # "5"
+        mc    = _MONTH_CODES[cur.month]
+        # Probar formatos en orden de probabilidad
+        for fmt in [f"ZQ{mc}{year2}=F", f"ZQ{mc}{year1}=F"]:
+            s = _try_download(fmt)
+            if s is not None and len(s) > 0:
+                # Normalizar índice a UTC-naive
+                if hasattr(s.index, "tz") and s.index.tz is not None:
+                    s.index = s.index.tz_localize(None)
+                # Guardar bajo el ticker canónico (mes/año)
+                canon = f"ZQ{mc}{year2}"
+                contracts[canon] = s
+                break  # no seguir probando formatos
+
         cur += pd.DateOffset(months=1)
     return contracts
 
@@ -1238,29 +1268,26 @@ def _implied_rate_for_meeting(meeting_dt: pd.Timestamp,
                                zq_data: dict,
                                as_of: pd.Timestamp) -> float:
     """
-    Tasa implícita de Fed Funds para un meeting FOMC dado,
-    en una fecha 'as_of', calculada desde el contrato ZQ del mes del meeting.
-
-    Metodología CME:
-      implied_rate = 100 - precio_cierre
-    El contrato del mes del meeting refleja la tasa promedio del mes.
-    Para meetings que ocurren a mitad de mes necesitamos ponderar:
-      rate = (days_before * rate_before + days_after * rate_after) / total_days
-    Pero para el forward path usamos la versión simplificada (precio del mes del meeting).
+    Tasa implícita de Fed Funds para un meeting FOMC dado.
+    Metodología: implied_rate = 100 - precio_cierre del contrato ZQ del mes.
     """
-    # Contrato del mes del meeting
-    ticker = _zq_ticker(meeting_dt.year, meeting_dt.month)
-    s = zq_data.get(ticker)
+    year2 = str(meeting_dt.year)[-2:]
+    mc    = _MONTH_CODES[meeting_dt.month]
+    canon = f"ZQ{mc}{year2}"
+    s = zq_data.get(canon)
     if s is None or len(s) == 0:
         return float("nan")
 
-    # Precio más cercano a as_of (sin mirar futuro)
+    # Normalizar índice
+    idx = s.index
+    if hasattr(idx, "tz") and idx.tz is not None:
+        idx = idx.tz_localize(None)
+        s = pd.Series(s.values, index=idx)
+
     avail = s[s.index <= as_of]
     if len(avail) == 0:
-        # Si as_of es antes de que ese contrato empiece a cotizar, no hay dato
         return float("nan")
-    price = float(avail.iloc[-1])
-    return 100.0 - price
+    return 100.0 - float(avail.iloc[-1])
 
 
 def _build_fw_curve(as_of: pd.Timestamp, zq_data: dict):
@@ -1294,6 +1321,25 @@ def _render_fedwatch():
 
     if not zq_data:
         st.warning("No se pudieron cargar contratos ZQ. Verificar conexión con Yahoo Finance.")
+        with st.expander("Diagnóstico"):
+            st.code(f"""
+Contratos intentados (formato ZQ{{mes}}{{año2}}):
+  ZQH25, ZQJ25, ZQK25, ZQM25, ZQN25, ZQQ25, ...
+  ZQH26, ZQJ26, ZQK26, ...
+
+Formatos probados por contrato:
+  ZQH25=F  (formato nuevo)
+  ZQH5=F   (formato viejo)
+
+Métodos de descarga:
+  1. yf.Ticker(ticker).history()
+  2. yf.download(ticker)
+
+Si el problema persiste, verificar en Python:
+  import yfinance as yf
+  yf.Ticker('ZQM25=F').history(period='5d')
+  yf.Ticker('ZQM5=F').history(period='5d')
+""")
         return
 
     # Fecha de referencia = última fecha disponible en el contrato más líquido
