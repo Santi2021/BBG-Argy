@@ -426,30 +426,66 @@ def _render_gdp():
         _add_diamond(fig, gdp.reindex(common), common, quarters, "Total GDP")
         st.plotly_chart(fig.update_layout(**_layout(300)), use_container_width=True, config={"displayModeBar": False})
 
-    # Heatmap table — last 8 quarters
+    # Heatmap table — last 8 quarters — pure HTML Bloomberg style
     _sec("LAST 8 QUARTERS — CONTRIBUTIONS (pp)")
     last8 = common[-8:]
     ql8   = [_qlabel(d) for d in last8]
-    series_map = {
-        "GDP": gdp, "Consumption": cons, "Durables": _gs(df,GDP_CODES["durables"]),
-        "Nondurables": _gs(df,GDP_CODES["nondurables"]), "Services": _gs(df,GDP_CODES["services"]),
-        "Investment": inv, "Residential": _gs(df,GDP_CODES["residential"]),
-        "Nonresidential": _gs(df,GDP_CODES["nonresidential"]), "Inventories": _gs(df,GDP_CODES["inventories"]),
-        "Government": gov, "Net Exports": nx,
-    }
-    tbl = pd.DataFrame({k: s.reindex(last8).fillna(0).values for k,s in series_map.items()}, index=ql8).T
 
-    def _cc(val):
-        b = "font-family:monospace;font-size:0.8rem;padding:5px;text-align:center;"
-        if val > 1.5:   return f"background:#0d4f2b;color:#4ade80;{b}"
-        if val > 0.5:   return f"background:#0a3320;color:#34d399;{b}"
-        if val > 0:     return f"background:#0c2918;color:#6ee7b7;{b}"
-        if val > -0.5:  return f"background:#2d1515;color:#fca5a5;{b}"
-        if val > -1.5:  return f"background:#3d1010;color:#f87171;{b}"
-        return f"background:#4d0a0a;color:#ef4444;{b}"
+    # ordered series with indent markers
+    series_map_ordered = [
+        ("GDP",             gdp,                                    False),
+        ("Consumption",     cons,                                   False),
+        ("  Durables",      _gs(df,GDP_CODES["durables"]),          True),
+        ("  Nondurables",   _gs(df,GDP_CODES["nondurables"]),       True),
+        ("  Services",      _gs(df,GDP_CODES["services"]),          True),
+        ("Investment",      inv,                                    False),
+        ("  Residential",   _gs(df,GDP_CODES["residential"]),       True),
+        ("  Nonresidential",_gs(df,GDP_CODES["nonresidential"]),    True),
+        ("  Inventories",   _gs(df,GDP_CODES["inventories"]),       True),
+        ("Government",      gov,                                    False),
+        ("Net Exports",     nx,                                     False),
+    ]
 
-    st.dataframe(tbl.style.format("{:+.2f}").applymap(_cc), use_container_width=True)
-    st.markdown(f'<div style="color:{MUTED};font-size:9px;margin-top:6px;font-family:\'Courier New\',monospace">Source: BEA NIPA Table 1.1.2 · Quarterly annualized rates · Contributions in pp</div>', unsafe_allow_html=True)
+    def _cell_bg_fg(v):
+        if   v >  2.0: return "#0a3d1f","#4ade80"
+        elif v >  0.5: return "#062910","#34d399"
+        elif v >  0.0: return "#041a0a","#6ee7b7"
+        elif v > -0.5: return "#1a0505","#fca5a5"
+        elif v > -2.0: return "#2a0606","#f87171"
+        else:          return "#3d0808","#ef4444"
+
+    T  = "font-family:'Courier New',monospace;"
+    TH = f"padding:4px 10px;{T}font-size:9px;font-weight:bold;letter-spacing:1px;color:#666;background:#0d0d0d;border-bottom:1px solid #333;border-right:1px solid #1a1a1a;text-align:center;white-space:nowrap;"
+    TH0= f"padding:4px 12px;{T}font-size:9px;font-weight:bold;letter-spacing:1px;color:#666;background:#0d0d0d;border-bottom:1px solid #333;border-right:1px solid #333;text-align:left;min-width:150px;"
+
+    hdr = f'<tr><th style="{TH0}">SERIES</th>' + "".join(f'<th style="{TH}">{q}</th>' for q in ql8) + "</tr>"
+
+    rows_html = ""
+    for i,(label, s, indented) in enumerate(series_map_ordered):
+        vals     = s.reindex(last8).fillna(0).values
+        is_top   = not indented
+        top_bdr  = "border-top:1px solid #2a2a2a;" if is_top and i > 0 else ""
+        fw       = "font-weight:bold;" if is_top else "font-weight:normal;"
+        ind_px   = "padding-left:22px;" if indented else "padding-left:12px;"
+        name_td  = f"padding:3px 10px;{T}font-size:10px;{fw}{ind_px}color:#ccc;background:#000;border-right:1px solid #333;{top_bdr}white-space:nowrap;"
+        rows_html += f'<tr><td style="{name_td}">{label.strip()}</td>'
+        for v in vals:
+            bg, fg = _cell_bg_fg(v)
+            sign   = "+" if v >= 0 else ""
+            td     = f"padding:3px 10px;{T}font-size:10px;font-weight:bold;text-align:right;background:{bg};color:{fg};border-right:1px solid #111;{top_bdr}white-space:nowrap;"
+            rows_html += f'<td style="{td}">{sign}{v:.2f}</td>'
+        rows_html += "</tr>"
+
+    st.markdown(f"""
+    <div style="overflow-x:auto;border:1px solid #2a2a2a;background:#000;margin-bottom:4px;">
+      <table style="border-collapse:collapse;width:100%;">
+        <thead>{hdr}</thead>
+        <tbody>{rows_html}</tbody>
+      </table>
+    </div>
+    <div style="color:#444;font-size:9px;{T}margin-bottom:10px;">
+      BEA NIPA Table 1.1.2 &nbsp;·&nbsp; Quarterly annualized rates &nbsp;·&nbsp; Contributions in pp
+    </div>""", unsafe_allow_html=True)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -549,71 +585,121 @@ def _render_labor():
     fig1.update_layout(**_layout(340))
     st.plotly_chart(fig1, use_container_width=True, config={"displayModeBar": False})
 
-    # ── Section 2: Sector horizontal bar ────────────────────────────────────
-    _sec("SECTOR PAYROLLS — LATEST MONTH CHANGE (000s)")
+    # ── Section 2: Payrolls by sector — BBG-style stacked chart + HTML data table
+    _sec("NONFARM PAYROLLS — SECTOR BREAKDOWN")
 
-    sector_map = {
-        "Mining & Logging":         BLS_IDS["sec_mining"],
-        "Construction":             BLS_IDS["sec_construction"],
-        "Manufacturing":            BLS_IDS["sec_manufacturing"],
-        "Trade, Transport & Util.": BLS_IDS["sec_trade_trans"],
-        "Information":              BLS_IDS["sec_information"],
-        "Financial Activities":     BLS_IDS["sec_financial"],
-        "Professional & Business":  BLS_IDS["sec_prof_biz"],
-        "Education & Health":       BLS_IDS["sec_edu_health"],
-        "Leisure & Hospitality":    BLS_IDS["sec_leisure"],
-        "Other Services":           BLS_IDS["sec_other"],
-        "Govt: Federal":            BLS_IDS["sec_govt_federal"],
-        "Govt: State":              BLS_IDS["sec_govt_state"],
-        "Govt: Local":              BLS_IDS["sec_govt_local"],
-    }
-    sector_vals = {}
-    for name, sid in sector_map.items():
+    # Sector config: (label_short, BLS_ID, color, group)
+    SECTOR_CFG = [
+        ("Goods Producing",       BLS_IDS["sec_mining"],       "#f59e0b",  "goods"),
+        ("Construction",          BLS_IDS["sec_construction"],  "#fbbf24",  "goods"),
+        ("Manufacturing",         BLS_IDS["sec_manufacturing"], "#d97706",  "goods"),
+        ("Trade & Transport",     BLS_IDS["sec_trade_trans"],   "#3b82f6",  "services"),
+        ("Information",           BLS_IDS["sec_information"],   "#8b5cf6",  "services"),
+        ("Financial",             BLS_IDS["sec_financial"],     "#06b6d4",  "services"),
+        ("Prof & Business",       BLS_IDS["sec_prof_biz"],      "#10b981",  "services"),
+        ("Education & Health",    BLS_IDS["sec_edu_health"],    "#34d399",  "services"),
+        ("Leisure & Hospitality", BLS_IDS["sec_leisure"],       "#f97316",  "services"),
+        ("Other Services",        BLS_IDS["sec_other"],         "#6b7280",  "services"),
+        ("Government",            BLS_IDS["sec_govt_federal"],  "#a78bfa",  "govt"),
+    ]
+    # Wider history for the chart
+    SECTOR_CUT = -30
+
+    sector_series = {}
+    for label, sid, color, group in SECTOR_CFG:
         if bls_df.empty: continue
-        s  = _bls_s(bls_df, sid).diff()
-        lv = _lat(s)
-        if lv is not None:
-            sector_vals[name] = lv
+        s = _bls_s(bls_df, sid).diff()
+        sector_series[label] = (s, color)
 
-    if sector_vals:
-        sec_df     = pd.DataFrame.from_dict(sector_vals, orient="index", columns=["change"]).sort_values("change")
-        bar_colors = [GREEN if v >= 0 else RED for v in sec_df["change"]]
-        fig2 = go.Figure()
-        fig2.add_trace(go.Bar(
-            name="MoM Change", x=sec_df["change"], y=sec_df.index,
-            orientation="h", marker_color=bar_colors,
-            hovertemplate="<b>%{y}</b>: %{x:+,.0f}K<extra></extra>",
+    # ── Stacked bar chart (BBG-style: stacked contributions, total as white line)
+    fig_sec = go.Figure()
+    total_nfp = pay_ch  # already computed above
+
+    for label, (s, color) in sector_series.items():
+        t = _trim(s.dropna(), SECTOR_CUT)
+        if len(t):
+            fig_sec.add_trace(go.Bar(
+                name=label, x=t.index, y=t.values / 1000,
+                marker_color=color, marker_line_width=0,
+                hovertemplate=f"<b>{label}</b>: %{{y:+.0f}}K<extra></extra>",
+            ))
+    # Total white line overlay
+    tot_t = _trim(total_nfp.dropna(), SECTOR_CUT)
+    if len(tot_t):
+        fig_sec.add_trace(go.Scatter(
+            name="Total NFP", x=tot_t.index, y=tot_t.values / 1000,
+            line=dict(color=WHITE, width=2),
+            mode="lines",
+            hovertemplate="<b>Total NFP</b>: %{y:+.0f}K<extra></extra>",
         ))
-        fig2.add_vline(x=0, line_color="#333", line_width=1)
-        layout2 = _layout(480)
-        layout2["margin"]["l"] = 180
-        layout2["xaxis"]["title"] = None
-        layout2["yaxis"]["gridcolor"] = "rgba(0,0,0,0)"
-        fig2.update_layout(**layout2)
-        st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})
+    fig_sec.add_hline(y=0, line_color="#333", line_width=1)
+    lay_sec = _layout(340)
+    lay_sec["barmode"] = "relative"
+    fig_sec.update_layout(**lay_sec)
+    st.plotly_chart(fig_sec, use_container_width=True, config={"displayModeBar": False})
 
-    # Sector heatmap last 6M
-    _sec("SECTOR HEATMAP — LAST 6 MONTHS MoM CHANGE (000s)")
+    # ── Integrated data table below chart — pure HTML, Bloomberg style ──────
+    _sec("DATA TABLE — SECTOR MoM NET CHANGE (000s)")
+
+    # Build last N months columns
+    N_MONTHS = 8
     heat_data = {}
-    for name, sid in sector_map.items():
-        if bls_df.empty: continue
-        s  = _bls_s(bls_df, sid).diff()
+    for label, (s, color) in sector_series.items():
         ch = s.dropna()
-        if len(ch) >= 6:
-            heat_data[name] = ch.iloc[-6:]
+        if len(ch) >= N_MONTHS:
+            heat_data[label] = {"series": ch, "color": color}
+
     if heat_data:
-        heat_df = pd.DataFrame(heat_data).T
-        heat_df.columns = [d.strftime("%b %Y") for d in heat_df.columns]
-        def _hcc(val):
-            b = "font-family:monospace;font-size:0.8rem;padding:5px;text-align:center;"
-            if pd.isna(val): return f"background:#0d0d0d;color:#333;{b}"
-            if val > 80:    return f"background:#0d4f2b;color:#4ade80;{b}"
-            elif val > 30:  return f"background:#0a3320;color:#34d399;{b}"
-            elif val > 0:   return f"background:#0c2918;color:#6ee7b7;{b}"
-            elif val > -30: return f"background:#2d1515;color:#fca5a5;{b}"
-            elif val > -80: return f"background:#3d1010;color:#f87171;{b}"
-            else:           return f"background:#4d0a0a;color:#ef4444;{b}"
-        st.dataframe(heat_df.style.format("{:+.0f}").applymap(_hcc), use_container_width=True)
+        # Get the common last N dates
+        all_idx = sorted(set.intersection(*[set(v["series"].index) for v in heat_data.values()]))
+        col_dates = sorted(all_idx)[-N_MONTHS:]
+        col_labels = [d.strftime("%b-%y") for d in col_dates]
+
+        def _td_style(val):
+            """Return (bg, fg) for a payroll change value in thousands."""
+            if   val >  80: bg,fg = "#0a3d1f","#4ade80"
+            elif val >  30: bg,fg = "#062910","#34d399"
+            elif val >   0: bg,fg = "#041a0a","#6ee7b7"
+            elif val > -30: bg,fg = "#1a0505","#fca5a5"
+            elif val > -80: bg,fg = "#2a0606","#f87171"
+            else:           bg,fg = "#3d0808","#ef4444"
+            return bg, fg
+
+        T2 = "font-family:'Courier New',monospace;"
+        TH2  = f"padding:4px 10px;{T2}font-size:9px;font-weight:bold;color:#666;background:#0d0d0d;border-bottom:1px solid #333;border-right:1px solid #1a1a1a;text-align:center;white-space:nowrap;"
+        TH2a = f"padding:4px 12px;{T2}font-size:9px;font-weight:bold;color:#666;background:#0d0d0d;border-bottom:1px solid #333;border-right:1px solid #333;text-align:left;min-width:160px;"
+
+        hdr2 = f'<tr><th style="{TH2a}">SERIES</th>'
+        for cl in col_labels:
+            hdr2 += f'<th style="{TH2}">{cl}</th>'
+        hdr2 += "</tr>"
+
+        body2 = ""
+        for label, info in heat_data.items():
+            color = info["color"]
+            vals  = [info["series"].get(d, float("nan")) for d in col_dates]
+            name_td = f"padding:3px 12px;{T2}font-size:10px;font-weight:bold;color:{color};background:#000;border-right:1px solid #333;white-space:nowrap;"
+            body2 += f'<tr><td style="{name_td}">{label}</td>'
+            for v in vals:
+                if pd.isna(v):
+                    body2 += f'<td style="padding:3px 10px;{T2}font-size:10px;text-align:right;background:#0a0a0a;color:#333;border-right:1px solid #111;">—</td>'
+                else:
+                    bg, fg = _td_style(v)
+                    sign   = "+" if v >= 0 else ""
+                    td2    = f"padding:3px 10px;{T2}font-size:10px;font-weight:bold;text-align:right;background:{bg};color:{fg};border-right:1px solid #111;white-space:nowrap;"
+                    body2 += f'<td style="{td2}">{sign}{v:.0f}K</td>'
+            body2 += "</tr>"
+
+        st.markdown(f"""
+        <div style="overflow-x:auto;border:1px solid #2a2a2a;background:#000;margin-bottom:4px;">
+          <table style="border-collapse:collapse;width:100%;">
+            <thead>{hdr2}</thead>
+            <tbody>{body2}</tbody>
+          </table>
+        </div>
+        <div style="color:#444;font-size:9px;{T2}margin-bottom:10px;">
+          BLS CES &nbsp;·&nbsp; Monthly net change in thousands &nbsp;·&nbsp; Seasonally adjusted
+        </div>""", unsafe_allow_html=True)
 
     # ── Section 3: Unemployment + LFPR ──────────────────────────────────────
     _sec("UNEMPLOYMENT & LABOR FORCE PARTICIPATION")
