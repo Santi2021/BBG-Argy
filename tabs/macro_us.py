@@ -1069,11 +1069,785 @@ def _render_inflation():
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+#  TAB: RATES  —  2Y fixed default
+# ═══════════════════════════════════════════════════════════════════════════════
+
+FRED_RATES = {
+    "dgs1m":     "DGS1MO",
+    "dgs3m":     "DGS3MO",
+    "dgs6m":     "DGS6MO",
+    "dgs1":      "DGS1",
+    "dgs2":      "DGS2",
+    "dgs5":      "DGS5",
+    "dgs7":      "DGS7",
+    "dgs10":     "DGS10",
+    "dgs20":     "DGS20",
+    "dgs30":     "DGS30",
+    "t10y2y":    "T10Y2Y",
+    "t10y3m":    "T10Y3M",
+    "fedfunds":  "FEDFUNDS",
+    "fed_lb":    "DFEDTARL",
+    "fed_ub":    "DFEDTARU",
+    "sofr":      "SOFR",
+    "iorb":      "IORB",
+    "onrrp":     "RRPONTSYAWARD",
+    "tips5":     "DFII5",
+    "tips10":    "DFII10",
+    "tips30":    "DFII30",
+    "bei5":      "T5YIE",
+    "bei10":     "T10YIE",
+    "ig_oas":    "BAMLC0A0CM",
+    "hy_oas":    "BAMLH0A0HYM2",
+    "bbb_oas":   "BAMLC0A4CBBB",
+    "nfci":      "NFCI",
+    "vix":       "VIXCLS",
+    "mortgage30":"MORTGAGE30US",
+    "dollar":    "DTWEXBGS",
+}
+
+TENORS      = ["1M","3M","6M","1Y","2Y","5Y","7Y","10Y","20Y","30Y"]
+TENOR_KEYS  = ["dgs1m","dgs3m","dgs6m","dgs1","dgs2","dgs5","dgs7","dgs10","dgs20","dgs30"]
+
+TEAL   = "#14b8a6"
+PINK   = "#f472b6"
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _load_rates_fred(start="2000-01-01"):
+    out = {}
+    for name, sid in FRED_RATES.items():
+        try:
+            params = {"series_id": sid, "observation_start": start,
+                      "api_key": FRED_KEY, "file_type": "json"}
+            r = requests.get("https://api.stlouisfed.org/fred/series/observations",
+                             params=params, timeout=20)
+            r.raise_for_status()
+            rows = []
+            for o in r.json()["observations"]:
+                try: rows.append({"date": pd.Timestamp(o["date"]), "value": float(o["value"])})
+                except: continue
+            out[name] = pd.DataFrame(rows).set_index("date")["value"].sort_index() if rows else pd.Series(dtype=float)
+        except:
+            out[name] = pd.Series(dtype=float)
+    return out
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def _load_treasury_curve():
+    try:
+        import xml.etree.ElementTree as ET
+        url    = "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml"
+        params = {"data": "daily_treasury_yield_curve",
+                  "field_tdr_date_value_month": _dt.now().strftime("%Y%m")}
+        r = requests.get(url, params=params, timeout=10)
+        r.raise_for_status()
+        root    = ET.fromstring(r.text)
+        entries = root.findall(".//{http://www.w3.org/2005/Atom}entry")
+        if not entries: return pd.Series(dtype=float)
+        props   = entries[-1].find(".//{http://schemas.microsoft.com/ado/2007/08/dataservices/metadata}properties")
+        tag_map = {"BC_1MONTH":"1M","BC_3MONTH":"3M","BC_6MONTH":"6M",
+                   "BC_1YEAR":"1Y","BC_2YEAR":"2Y","BC_3YEAR":"3Y",
+                   "BC_5YEAR":"5Y","BC_7YEAR":"7Y","BC_10YEAR":"10Y",
+                   "BC_20YEAR":"20Y","BC_30YEAR":"30Y"}
+        curve = {}
+        for tag, label in tag_map.items():
+            el = props.find(f"{{http://schemas.microsoft.com/ado/2007/08/dataservices}}{tag}")
+            if el is not None and el.text:
+                try: curve[label] = float(el.text)
+                except: pass
+        return pd.Series(curve)
+    except:
+        return pd.Series(dtype=float)
+
+
+def _rlast(s):
+    d = s.dropna()
+    return float(d.iloc[-1]) if len(d) else float("nan")
+
+def _rpctile(s, val):
+    d = s.dropna()
+    if not len(d): return float("nan")
+    return (d <= val).mean() * 100
+
+def _rtrim(s, start_date):
+    if start_date is None or not len(s): return s
+    if not isinstance(s.index, pd.DatetimeIndex): return s
+    return s[s.index >= pd.Timestamp(start_date)]
+
+def _spr_color(v):
+    if pd.isna(v): return MUTED
+    return GREEN if v > 0.5 else (RED if v < -0.2 else AMBER)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  FEDWATCH — Implied Fed Funds path from ZQ futures (yfinance)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# FOMC meeting dates 2025-2026 (hardcoded, updated annually)
+FOMC_MEETINGS = [
+    "2025-01-29", "2025-03-19", "2025-05-07", "2025-06-18",
+    "2025-07-30", "2025-09-17", "2025-10-29", "2025-12-10",
+    "2026-01-28", "2026-03-18", "2026-04-29", "2026-06-17",
+    "2026-07-29", "2026-09-16", "2026-10-28", "2026-12-09",
+]
+
+# ZQ contract tickers: ZQ + month code + year (e.g. ZQH25 = March 2025)
+_MONTH_CODES = {1:"F",2:"G",3:"H",4:"J",5:"K",6:"M",
+                7:"N",8:"Q",9:"U",10:"V",11:"X",12:"Z"}
+
+
+def _zq_ticker(year: int, month: int) -> str:
+    return f"ZQ{_MONTH_CODES[month]}{str(year)[-2:]}=F"
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _load_zq_history(start_date: str = "2024-01-01") -> dict:
+    """
+    Descarga histórico de precios de cierre para los contratos ZQ
+    necesarios para cubrir los meetings FOMC.
+    Retorna dict {ticker: pd.Series}.
+    """
+    import yfinance as yf
+    today = pd.Timestamp.today()
+    # Necesitamos contratos desde start_date hasta ~18 meses adelante
+    contracts = {}
+    start = pd.Timestamp(start_date)
+    end   = today + pd.DateOffset(months=18)
+    cur   = pd.Timestamp(start.year, start.month, 1)
+    while cur <= end:
+        ticker = _zq_ticker(cur.year, cur.month)
+        try:
+            df = yf.download(ticker, start=start_date,
+                             progress=False, auto_adjust=True)
+            if df is not None and len(df) > 0:
+                # Handle MultiIndex from newer yfinance
+                if isinstance(df.columns, pd.MultiIndex):
+                    close = df["Close"].squeeze()
+                else:
+                    close = df["Close"].squeeze()
+                if isinstance(close, pd.DataFrame):
+                    close = close.iloc[:, 0]
+                contracts[ticker] = close.dropna()
+        except Exception:
+            pass
+        cur += pd.DateOffset(months=1)
+    return contracts
+
+
+def _implied_rate_for_meeting(meeting_dt: pd.Timestamp,
+                               zq_data: dict,
+                               as_of: pd.Timestamp) -> float:
+    """
+    Tasa implícita de Fed Funds para un meeting FOMC dado,
+    en una fecha 'as_of', calculada desde el contrato ZQ del mes del meeting.
+
+    Metodología CME:
+      implied_rate = 100 - precio_cierre
+    El contrato del mes del meeting refleja la tasa promedio del mes.
+    Para meetings que ocurren a mitad de mes necesitamos ponderar:
+      rate = (days_before * rate_before + days_after * rate_after) / total_days
+    Pero para el forward path usamos la versión simplificada (precio del mes del meeting).
+    """
+    # Contrato del mes del meeting
+    ticker = _zq_ticker(meeting_dt.year, meeting_dt.month)
+    s = zq_data.get(ticker)
+    if s is None or len(s) == 0:
+        return float("nan")
+
+    # Precio más cercano a as_of (sin mirar futuro)
+    avail = s[s.index <= as_of]
+    if len(avail) == 0:
+        # Si as_of es antes de que ese contrato empiece a cotizar, no hay dato
+        return float("nan")
+    price = float(avail.iloc[-1])
+    return 100.0 - price
+
+
+def _build_fw_curve(as_of: pd.Timestamp, zq_data: dict):
+    """Devuelve (labels, rates_pct) para todos los meetings futuros a as_of."""
+    today_ts = as_of
+    meetings  = [pd.Timestamp(m) for m in FOMC_MEETINGS if pd.Timestamp(m) >= today_ts - pd.Timedelta(days=5)]
+    labels, rates = [], []
+    for m in meetings:
+        r = _implied_rate_for_meeting(m, zq_data, as_of)
+        labels.append(m.strftime("%d %b %Y"))
+        rates.append(r)
+    labels = [l for l, r in zip(labels, rates) if not pd.isna(r)]
+    rates  = [r for r in rates if not pd.isna(r)]
+    return labels, rates
+
+
+def _nearest_trading_date(target: pd.Timestamp, all_dates) -> pd.Timestamp | None:
+    avail = [d for d in all_dates if d <= target]
+    return max(avail) if avail else None
+
+
+def _render_fedwatch():
+    _sec("FED FUNDS PATH IMPLÍCITO — ZQ Futures (CME)")
+
+    with st.spinner("Descargando contratos ZQ de Fed Funds..."):
+        try:
+            zq_data = _load_zq_history("2023-01-01")
+        except Exception as e:
+            st.error(f"Error cargando ZQ futures: {e}")
+            return
+
+    if not zq_data:
+        st.warning("No se pudieron cargar contratos ZQ. Verificar conexión con Yahoo Finance.")
+        return
+
+    # Fecha de referencia = última fecha disponible en el contrato más líquido
+    # Tomamos la fecha más reciente entre todos los contratos disponibles
+    all_dates_union = sorted(set.union(*[set(s.index) for s in zq_data.values() if len(s)]))
+    if not all_dates_union:
+        st.warning("Sin datos de ZQ futures disponibles.")
+        return
+
+    today_avail = all_dates_union[-1]
+
+    # ── KPI: curva actual ──────────────────────────────────────────────────────
+    labels_now, rates_now = _build_fw_curve(today_avail, zq_data)
+
+    if not rates_now:
+        st.warning("No hay meetings futuros con datos disponibles.")
+        return
+
+    front_rate   = rates_now[0]
+    min_rate     = min(rates_now)
+    total_cuts   = max(0.0, (front_rate - min_rate) * 100)
+    terminal_lbl = labels_now[rates_now.index(min_rate)]
+
+    _kpi_strip([
+        (f"{front_rate:.2f}%",   "TASA ACTUAL IMPLÍCITA",  f"próximo meeting",             AMBER),
+        (f"{min_rate:.2f}%",     "TASA TERMINAL IMPLÍCITA",f"mín del ciclo ({terminal_lbl})", CYAN),
+        (f"{total_cuts:.0f}bp",  "RECORTES TOTALES",        "frente → piso",               GREEN if total_cuts > 0 else MUTED),
+        (f"{today_avail.strftime('%d %b %Y')}", "DATOS AL", "ZQ futures", MUTED),
+    ])
+
+    # ── Tab A: Curva actual vs 30/60/90 días atrás ────────────────────────────
+    fw_tabs = st.tabs(["Curva implícita", "Path histórico"])
+
+    with fw_tabs[0]:
+        _sec("CURVA IMPLÍCITA HOY vs 30 / 60 / 90 DÍAS ATRÁS")
+
+        scenarios = [
+            ("Hoy",         today_avail,                                              CYAN,   "solid", 2.5),
+            ("Hace 30d",    _nearest_trading_date(today_avail - pd.Timedelta(30), all_dates_union),  AMBER,  "dot",   2.0),
+            ("Hace 60d",    _nearest_trading_date(today_avail - pd.Timedelta(60), all_dates_union),  GREEN,  "dash",  1.5),
+            ("Hace 90d",    _nearest_trading_date(today_avail - pd.Timedelta(90), all_dates_union),  VIOLET, "dot",   1.5),
+        ]
+
+        # Meetings comunes entre todas las curvas disponibles
+        all_curves = {}
+        for lbl, dt, *_ in scenarios:
+            if dt is None: continue
+            labs, rts = _build_fw_curve(dt, zq_data)
+            if labs: all_curves[lbl] = {l: r for l, r in zip(labs, rts)}
+
+        if all_curves:
+            common = set.intersection(*[set(d.keys()) for d in all_curves.values()])
+            common_sorted = sorted(common, key=lambda x: pd.to_datetime(x, dayfirst=True))
+
+            fig_fw = go.Figure()
+            for lbl, dt, color, dash, width in scenarios:
+                if lbl not in all_curves or not common_sorted: continue
+                d = all_curves[lbl]
+                ys = [d[m] for m in common_sorted if m in d]
+                xs = [m for m in common_sorted if m in d]
+                if not xs: continue
+                dt_str = dt.strftime("%d %b %Y") if dt else ""
+                fig_fw.add_trace(go.Scatter(
+                    name=f"{lbl} ({dt_str})",
+                    x=xs, y=ys,
+                    mode="lines+markers",
+                    line=dict(color=color, width=width, dash=dash),
+                    marker=dict(size=6, color=color),
+                    hovertemplate=f"<b>{lbl}</b> %{{x}}: %{{y:.2f}}%<extra></extra>",
+                ))
+
+            lay_fw = _layout(320)
+            lay_fw["margin"] = dict(l=55, r=20, t=36, b=80)
+            lay_fw["xaxis"]["tickangle"] = -40
+            lay_fw["xaxis"]["showgrid"]  = True
+            lay_fw["xaxis"]["gridcolor"] = GRID
+            fig_fw.update_layout(**lay_fw)
+            st.plotly_chart(fig_fw, use_container_width=True, config={"displayModeBar": False})
+
+        # Tabla HTML de la curva actual
+        _sec("TABLA — CURVA ACTUAL")
+        T3 = "font-family:'Courier New',monospace;"
+        TH_fw  = f"padding:4px 12px;{T3}font-size:9px;color:#666;background:#0d0d0d;border-bottom:1px solid #333;border-right:1px solid #1a1a1a;text-align:center;"
+        TH0_fw = f"padding:4px 12px;{T3}font-size:9px;color:#666;background:#0d0d0d;border-bottom:1px solid #333;border-right:1px solid #333;text-align:left;"
+        hdr_fw = f'<tr><th style="{TH0_fw}">MEETING</th><th style="{TH_fw}">TASA IMPLÍCITA</th><th style="{TH_fw}">vs TASA ACTUAL</th></tr>'
+        body_fw = ""
+        current_rate = rates_now[0] if rates_now else float("nan")
+        for lbl, rate in zip(labels_now, rates_now):
+            delta = rate - current_rate
+            dcolor = GREEN if delta < -0.01 else (RED if delta > 0.01 else "#888")
+            delta_s = f'<span style="color:{dcolor};font-weight:bold">{delta:+.2f}%</span>'
+            rate_s  = f'<span style="color:{GOLD};font-weight:bold">{rate:.2f}%</span>'
+            body_fw += f'<tr><td style="padding:3px 12px;{T3}font-size:10px;color:#ccc;background:#000;border-right:1px solid #333;">{lbl}</td><td style="padding:3px 10px;{T3}font-size:10px;text-align:right;background:#0a0a0a;border-right:1px solid #111;">{rate_s}</td><td style="padding:3px 10px;{T3}font-size:10px;text-align:right;background:#0a0a0a;border-right:1px solid #111;">{delta_s}</td></tr>'
+        st.markdown(f'<div style="overflow-x:auto;border:1px solid #2a2a2a;background:#000;margin-bottom:8px;max-width:480px;"><table style="border-collapse:collapse;width:100%;"><thead>{hdr_fw}</thead><tbody>{body_fw}</tbody></table></div>', unsafe_allow_html=True)
+
+    with fw_tabs[1]:
+        _sec("PATH HISTÓRICO — RECORTES Y TASA TERMINAL IMPLÍCITA")
+
+        records = []
+        # Calcular para cada fecha disponible en el histórico (desde hace ~2 años)
+        cutoff = today_avail - pd.DateOffset(years=2)
+        sample_dates = [d for d in all_dates_union if d >= cutoff]
+        # Sub-muestrear a semanal para no hacer demasiados cálculos
+        sample_dates_weekly = []
+        last_sampled = None
+        for d in sorted(sample_dates):
+            if last_sampled is None or (d - last_sampled).days >= 5:
+                sample_dates_weekly.append(d)
+                last_sampled = d
+
+        for d in sample_dates_weekly:
+            lbs, rts = _build_fw_curve(d, zq_data)
+            if len(rts) < 2: continue
+            fr   = rts[0]
+            minr = min(rts)
+            cuts = max(0.0, (fr - minr) * 100)
+            records.append({"date": d, "front_rate": fr, "terminal_rate": minr, "total_cuts_bps": cuts})
+
+        if not records:
+            st.info("Insuficiente historia para mostrar el path.")
+            return
+
+        path_df = pd.DataFrame(records).sort_values("date")
+
+        # Gráfico 1: Recortes implícitos a lo largo del tiempo
+        fig_cuts = make_subplots(rows=2, cols=1, vertical_spacing=0.12,
+                                  subplot_titles=["", ""])
+        fig_cuts.add_trace(go.Scatter(
+            name="Recortes implícitos (bps)",
+            x=path_df["date"], y=path_df["total_cuts_bps"],
+            line=dict(color=CYAN, width=2),
+            fill="tozeroy", fillcolor="rgba(0,212,255,0.07)",
+            hovertemplate="<b>Recortes implícitos</b>: %{y:.0f}bp<extra></extra>",
+        ), row=1, col=1)
+        fig_cuts.add_trace(go.Scatter(
+            name="Tasa terminal implícita (%)",
+            x=path_df["date"], y=path_df["terminal_rate"],
+            line=dict(color=GREEN, width=2),
+            hovertemplate="<b>Tasa terminal</b>: %{y:.2f}%<extra></extra>",
+        ), row=2, col=1)
+
+        lay_cuts = _layout_sub(440)
+        lay_cuts["margin"] = dict(l=55, r=20, t=36, b=36)
+        lay_cuts["showlegend"] = True
+        fig_cuts.update_layout(**lay_cuts)
+
+        # Estilo manual de los ejes de cada subplot
+        fig_cuts.update_xaxes(gridcolor=GRID, linecolor=GRID, tickfont=dict(color="#aaaaaa", size=9))
+        fig_cuts.update_yaxes(gridcolor=GRID, linecolor=GRID, zeroline=False, tickfont=dict(color="#aaaaaa", size=9))
+
+        # Anotaciones manuales como títulos de subplot (evitar "undefined")
+        fig_cuts.add_annotation(text="Recortes totales implícitos (bps)", xref="paper", yref="paper",
+            x=0, y=1.01, showarrow=False, font=dict(color=MUTED, size=9, family="'Courier New',monospace"), xanchor="left")
+        fig_cuts.add_annotation(text="Tasa terminal implícita (%)", xref="paper", yref="paper",
+            x=0, y=0.44, showarrow=False, font=dict(color=MUTED, size=9, family="'Courier New',monospace"), xanchor="left")
+
+        st.plotly_chart(fig_cuts, use_container_width=True, config={"displayModeBar": False})
+
+        st.markdown(
+            f'<div style="color:{MUTED};font-size:9px;font-family:\'Courier New\',monospace;margin-top:4px;">'
+            f'Fuente: CME 30-Day Fed Funds Futures (ZQ) via Yahoo Finance &nbsp;·&nbsp; '
+            f'Metodología: tasa implícita = 100 − precio &nbsp;·&nbsp; '
+            f'Recortes = tasa del próximo meeting − mínimo del ciclo &nbsp;·&nbsp; '
+            f'Datos muestreados semanalmente</div>',
+            unsafe_allow_html=True)
+
+
+def _render_rates():
+    CUT = "2Y"
+
+    with st.spinner("Loading FRED rates data..."):
+        try:
+            today = pd.Timestamp.today()
+            fetch_start = (today - pd.DateOffset(years=4)).strftime("%Y-%m-%d")
+            D   = _load_rates_fred(fetch_start)
+            tcv = _load_treasury_curve()
+        except Exception as e:
+            st.error(f"Rates data error: {e}"); return
+
+    cut_date = (pd.Timestamp.today() - pd.DateOffset(years=2)).strftime("%Y-%m-%d")
+
+    def tr(s): return _rtrim(s, cut_date)
+
+    # Key values
+    l_ff    = _rlast(D["fedfunds"])
+    l_2     = _rlast(D["dgs2"])
+    l_10    = _rlast(D["dgs10"])
+    l_30    = _rlast(D["dgs30"])
+    l_3m    = _rlast(D["dgs3m"])
+    l_spr   = _rlast(D["t10y2y"])
+    l_t10t3m= _rlast(D["t10y3m"])
+    l_real  = _rlast(D["tips10"])
+    l_bei10 = _rlast(D["bei10"])
+    l_sofr  = _rlast(D["sofr"])
+    l_hy_bp = _rlast(D["hy_oas"])  * 100
+    l_ig_bp = _rlast(D["ig_oas"])  * 100
+    l_nfci  = _rlast(D["nfci"])
+    l_mort  = _rlast(D["mortgage30"])
+    l_dxy   = _rlast(D["dollar"])
+
+    _kpi_strip([
+        (f"{l_ff:.2f}%"      if not pd.isna(l_ff)    else "—", "FED FUNDS",   f"SOFR: {l_sofr:.2f}%",       AMBER),
+        (f"{l_2:.2f}%"       if not pd.isna(l_2)     else "—", "2Y TREASURY", f"3M: {l_3m:.2f}%",           BLUE),
+        (f"{l_10:.2f}%"      if not pd.isna(l_10)    else "—", "10Y TREASURY",f"30Y: {l_30:.2f}%",          CYAN),
+        (f"{l_spr:+.2f}%"    if not pd.isna(l_spr)   else "—", "2s10s SPREAD",f"10Y-3M: {l_t10t3m:+.2f}%", _spr_color(l_spr)),
+        (f"{l_real:.2f}%"    if not pd.isna(l_real)  else "—", "10Y REAL",    f"BEI: {l_bei10:.2f}%",       TEAL),
+        (f"{l_hy_bp:.0f}bp"  if not pd.isna(l_hy_bp) else "—", "HY OAS",      f"IG: {l_ig_bp:.0f}bp",       GREEN if l_hy_bp < 350 else (AMBER if l_hy_bp < 600 else RED)),
+    ])
+
+    # ── Subtabs ──────────────────────────────────────────────────────────────
+    rtabs = st.tabs(["YIELD CURVE", "FED CORRIDOR", "CREDIT & CONDITIONS", "FEDWATCH", "RATE SNAPSHOT"])
+
+    # ══ Tab 1: YIELD CURVE ═══════════════════════════════════════════════════
+    with rtabs[0]:
+        ytabs = st.tabs(["Snapshot", "History", "Spreads"])
+
+        with ytabs[0]:
+            _sec("YIELD CURVE — CURRENT vs 3M AGO vs 1Y AGO")
+            def _curve_pts(days_ago=0):
+                pts = {}
+                for label, key in zip(TENORS, TENOR_KEYS):
+                    s = D[key].dropna()
+                    if not len(s): continue
+                    idx = -1 - days_ago
+                    if abs(idx) <= len(s):
+                        pts[label] = float(s.iloc[idx])
+                return pts
+
+            today_c = dict(tcv) if len(tcv) else _curve_pts(0)
+            m3ago_c = _curve_pts(63)
+            y1ago_c = _curve_pts(252)
+
+            tenor_ord = ["1M","3M","6M","1Y","2Y","3Y","5Y","7Y","10Y","20Y","30Y"]
+            def _ordered(d):
+                return [(t, d[t]) for t in tenor_ord if t in d]
+
+            fig_yc = go.Figure()
+            for label, pts, color, dash, width in [
+                ("Today",    today_c, CYAN,  "solid", 2.5),
+                ("3M ago",   m3ago_c, AMBER, "dot",   1.5),
+                ("1Y ago",   y1ago_c, MUTED, "dash",  1.5),
+            ]:
+                ordered = _ordered(pts)
+                if ordered:
+                    xs, ys = zip(*ordered)
+                    fig_yc.add_trace(go.Scatter(
+                        name=label, x=list(xs), y=list(ys),
+                        mode="lines+markers",
+                        line=dict(color=color, width=width, dash=dash),
+                        marker=dict(size=5, color=color),
+                        hovertemplate=f"<b>{label}</b> %{{x}}: %{{y:.2f}}%<extra></extra>",
+                    ))
+            lay_yc = _layout(300)
+            lay_yc["margin"] = dict(l=55, r=20, t=36, b=36)
+            lay_yc["xaxis"]["showgrid"] = True
+            lay_yc["xaxis"]["gridcolor"] = GRID
+            fig_yc.update_layout(**lay_yc)
+            st.plotly_chart(fig_yc, use_container_width=True, config={"displayModeBar": False})
+
+            # HTML snapshot table
+            _sec("TENOR SNAPSHOT")
+            T = "font-family:'Courier New',monospace;"
+            th_s = f"padding:4px 12px;{T}font-size:9px;color:#666;background:#0d0d0d;border-bottom:1px solid #333;border-right:1px solid #1a1a1a;text-align:center;white-space:nowrap;"
+            th0  = f"padding:4px 12px;{T}font-size:9px;color:#666;background:#0d0d0d;border-bottom:1px solid #333;border-right:1px solid #333;text-align:left;min-width:80px;"
+            hdr_yc = f'<tr><th style="{th0}">TENOR</th>'
+            for col in ["CURRENT","3M AGO","1Y AGO","CHG 3M","CHG 1Y"]:
+                hdr_yc += f'<th style="{th_s}">{col}</th>'
+            hdr_yc += "</tr>"
+            body_yc = ""
+            for tenor in tenor_ord:
+                cur = today_c.get(tenor); m3 = m3ago_c.get(tenor); y1 = y1ago_c.get(tenor)
+                if cur is None: continue
+                chg3 = cur - m3 if m3 else float("nan")
+                chgy = cur - y1 if y1 else float("nan")
+                def _td_chg(v):
+                    if pd.isna(v): return f'<td style="padding:3px 10px;{T}font-size:10px;text-align:right;background:#0a0a0a;color:#444;border-right:1px solid #111;">—</td>'
+                    bg = "#062910" if v < -0.1 else ("#2a0606" if v > 0.1 else "#0a0a0a")
+                    fg = "#34d399" if v < -0.1 else ("#f87171" if v > 0.1 else "#888")
+                    return f'<td style="padding:3px 10px;{T}font-size:10px;font-weight:bold;text-align:right;background:{bg};color:{fg};border-right:1px solid #111;">{v:+.2f}%</td>'
+                nm = f'<td style="padding:3px 12px;{T}font-size:10px;font-weight:bold;color:{CYAN};background:#000;border-right:1px solid #333;">{tenor}</td>'
+                vc = f'<td style="padding:3px 10px;{T}font-size:10px;font-weight:bold;text-align:right;background:#0a0a0a;color:{GOLD};border-right:1px solid #111;">{cur:.2f}%</td>'
+                v3 = f'<td style="padding:3px 10px;{T}font-size:10px;text-align:right;background:#000;color:#aaa;border-right:1px solid #111;">{m3:.2f}%</td>' if m3 else f'<td style="padding:3px 10px;{T}font-size:10px;text-align:right;background:#000;color:#444;border-right:1px solid #111;">—</td>'
+                v1 = f'<td style="padding:3px 10px;{T}font-size:10px;text-align:right;background:#000;color:#888;border-right:1px solid #111;">{y1:.2f}%</td>' if y1 else f'<td style="padding:3px 10px;{T}font-size:10px;text-align:right;background:#000;color:#444;border-right:1px solid #111;">—</td>'
+                body_yc += f"<tr>{nm}{vc}{v3}{v1}{_td_chg(chg3)}{_td_chg(chgy)}</tr>"
+            st.markdown(f"""
+            <div style="overflow-x:auto;border:1px solid #2a2a2a;background:#000;margin-bottom:8px;">
+              <table style="border-collapse:collapse;width:100%;">
+                <thead>{hdr_yc}</thead><tbody>{body_yc}</tbody>
+              </table>
+            </div>""", unsafe_allow_html=True)
+
+        with ytabs[1]:
+            _sec("10Y · 2Y · 3M — HISTORICAL")
+            fig_yh = go.Figure()
+            for name, key, color, dash in [
+                ("10Y", "dgs10", CYAN,  "solid"),
+                ("2Y",  "dgs2",  BLUE,  "solid"),
+                ("3M",  "dgs3m", AMBER, "dot"),
+                ("30Y", "dgs30", MUTED, "dash"),
+            ]:
+                s = tr(D[key].dropna())
+                if len(s):
+                    fig_yh.add_trace(go.Scatter(name=name, x=s.index, y=s.values,
+                        line=dict(color=color, width=2, dash=dash),
+                        hovertemplate=f"<b>{name}</b>: %{{y:.2f}}%<extra></extra>"))
+            lay_yh = _layout(320); lay_yh["margin"] = dict(l=55, r=20, t=36, b=36)
+            fig_yh.update_layout(**lay_yh)
+            st.plotly_chart(fig_yh, use_container_width=True, config={"displayModeBar": False})
+
+        with ytabs[2]:
+            _sec("2s10s & 10Y-3M SPREADS")
+            fig_sp = go.Figure()
+            fig_sp.add_hline(y=0, line_color="#333", line_width=1)
+            for name, key, color in [
+                ("2s10s",   "t10y2y", CYAN),
+                ("10Y-3M",  "t10y3m", AMBER),
+            ]:
+                s = tr(D[key].dropna())
+                if len(s):
+                    fig_sp.add_trace(go.Scatter(name=name, x=s.index, y=s.values,
+                        line=dict(color=color, width=2),
+                        fill="tozeroy", fillcolor=f"rgba({int(color[1:3],16)},{int(color[3:5],16)},{int(color[5:7],16)},0.06)",
+                        hovertemplate=f"<b>{name}</b>: %{{y:+.2f}}%<extra></extra>"))
+            lay_sp = _layout(280); lay_sp["margin"] = dict(l=55, r=20, t=36, b=36)
+            fig_sp.update_layout(**lay_sp)
+            st.plotly_chart(fig_sp, use_container_width=True, config={"displayModeBar": False})
+
+    # ══ Tab 2: FED CORRIDOR ═══════════════════════════════════════════════════
+    with rtabs[1]:
+        _sec("FED CORRIDOR — FED FUNDS · SOFR · IORB · ON RRP")
+
+        fig_corr = make_subplots(specs=[[{"secondary_y": True}]])
+        lb = tr(D["fed_lb"].dropna()); ub = tr(D["fed_ub"].dropna())
+        ci = lb.index.intersection(ub.index)
+        if len(ci):
+            fig_corr.add_trace(go.Scatter(
+                name="Target Range",
+                x=list(ci) + list(ci[::-1]),
+                y=list(ub.reindex(ci).values) + list(lb.reindex(ci).values[::-1]),
+                fill="toself", fillcolor="rgba(245,158,11,0.08)",
+                line=dict(color="rgba(0,0,0,0)"), showlegend=True, hoverinfo="skip",
+            ), secondary_y=False)
+
+        for name, key, color, width, dash in [
+            ("Fed Funds",    "fedfunds", AMBER,  2.5, "solid"),
+            ("SOFR",         "sofr",     CYAN,   2.0, "solid"),
+            ("IORB (ceil.)", "iorb",     PINK,   1.5, "dot"),
+            ("ON RRP (fl.)", "onrrp",    VIOLET, 1.5, "dash"),
+        ]:
+            s = tr(D[key].dropna())
+            if len(s):
+                fig_corr.add_trace(go.Scatter(name=name, x=s.index, y=s.values,
+                    line=dict(color=color, width=width, dash=dash),
+                    hovertemplate=f"<b>{name}</b>: %{{y:.2f}}%<extra></extra>"),
+                    secondary_y=False)
+        lay_c = _layout_sub(320)
+        lay_c["margin"] = dict(l=55, r=20, t=36, b=36)
+        fig_corr.update_layout(**lay_c)
+        _style_sub_axes(fig_corr)
+        st.plotly_chart(fig_corr, use_container_width=True, config={"displayModeBar": False})
+
+        _sec("REAL RATE · TIPS · BREAKEVENS")
+        fig_rr = go.Figure()
+        for name, key, color, dash in [
+            ("10Y Real (TIPS)", "tips10", TEAL,   "solid"),
+            ("5Y Real",         "tips5",  CYAN,   "dot"),
+            ("BEI 10Y",         "bei10",  PINK,   "solid"),
+            ("BEI 5Y",          "bei5",   VIOLET, "dot"),
+        ]:
+            s = tr(D[key].dropna())
+            if len(s):
+                fig_rr.add_trace(go.Scatter(name=name, x=s.index, y=s.values,
+                    line=dict(color=color, width=2, dash=dash),
+                    hovertemplate=f"<b>{name}</b>: %{{y:.2f}}%<extra></extra>"))
+        fig_rr.add_hline(y=0, line_color="#333", line_width=1)
+        lay_rr = _layout(280); lay_rr["margin"] = dict(l=55, r=20, t=36, b=36)
+        fig_rr.update_layout(**lay_rr)
+        st.plotly_chart(fig_rr, use_container_width=True, config={"displayModeBar": False})
+
+        _sec("MORTGAGE 30Y vs FED FUNDS · USD INDEX")
+        fig_tr = make_subplots(specs=[[{"secondary_y": True}]])
+        for name, key, color, dash, sec_y in [
+            ("Mortgage 30Y", "mortgage30", PINK,  "solid", False),
+            ("Fed Funds",    "fedfunds",   AMBER, "dot",   False),
+            ("USD Index",    "dollar",     CYAN,  "solid", True),
+        ]:
+            s = tr(D[key].dropna())
+            if len(s):
+                fig_tr.add_trace(go.Scatter(name=name, x=s.index, y=s.values,
+                    line=dict(color=color, width=2, dash=dash),
+                    hovertemplate=f"<b>{name}</b>: %{{y:.2f}}<extra></extra>"),
+                    secondary_y=sec_y)
+        lay_tr = _layout_sub(300); lay_tr["margin"] = dict(l=55, r=55, t=36, b=36)
+        fig_tr.update_layout(**lay_tr)
+        _style_sub_axes(fig_tr)
+        st.plotly_chart(fig_tr, use_container_width=True, config={"displayModeBar": False})
+
+    # ══ Tab 3: CREDIT & CONDITIONS ════════════════════════════════════════════
+    with rtabs[2]:
+        _sec("CREDIT SPREADS — OAS (basis points)")
+
+        ig_bp  = D["ig_oas"]  * 100
+        hy_bp  = D["hy_oas"]  * 100
+        bbb_bp = D["bbb_oas"] * 100
+        ig_pct  = _rpctile(ig_bp,  l_ig_bp)
+        hy_pct  = _rpctile(hy_bp,  l_hy_bp)
+
+        def _oas_c(p): return GREEN if p < 30 else (AMBER if p < 60 else RED)
+
+        _kpi_strip([
+            (f"{l_ig_bp:.0f}bp",           "IG OAS",    f"pctile {ig_pct:.0f}%",  _oas_c(ig_pct)),
+            (f"{_rlast(bbb_bp):.0f}bp",    "BBB OAS",   "BAML C0A4",              AMBER),
+            (f"{l_hy_bp:.0f}bp",           "HY OAS",    f"pctile {hy_pct:.0f}%",  _oas_c(hy_pct)),
+            (f"{l_hy_bp - l_ig_bp:.0f}bp", "HY-IG DIFF","fallen angel proxy",     AMBER),
+        ])
+
+        fig_cr = go.Figure()
+        for name, s, color, dash in [
+            ("HY OAS",  tr(hy_bp.dropna()),  RED,   "solid"),
+            ("BBB OAS", tr(bbb_bp.dropna()), AMBER, "dot"),
+            ("IG OAS",  tr(ig_bp.dropna()),  GREEN, "dash"),
+        ]:
+            if len(s):
+                fig_cr.add_trace(go.Scatter(name=name, x=s.index, y=s.values,
+                    line=dict(color=color, width=2, dash=dash),
+                    hovertemplate=f"<b>{name}</b>: %{{y:.0f}}bp<extra></extra>"))
+        lay_cr = _layout(300); lay_cr["margin"] = dict(l=55, r=20, t=36, b=36)
+        fig_cr.update_layout(**lay_cr)
+        st.plotly_chart(fig_cr, use_container_width=True, config={"displayModeBar": False})
+
+        _sec("FINANCIAL CONDITIONS — NFCI · VIX")
+
+        nfci_t = tr(D["nfci"].dropna())
+        vix_t  = tr(D["vix"].dropna())
+
+        fig_nf = make_subplots(specs=[[{"secondary_y": True}]])
+        if len(nfci_t):
+            nfci_pos = nfci_t.clip(lower=0)
+            nfci_neg = nfci_t.clip(upper=0)
+            fig_nf.add_trace(go.Bar(name="NFCI tight (>0)", x=nfci_pos.index, y=nfci_pos.values,
+                marker_color=RED, opacity=0.7,
+                hovertemplate="<b>NFCI</b>: %{y:+.3f}<extra></extra>"), secondary_y=False)
+            fig_nf.add_trace(go.Bar(name="NFCI loose (<0)", x=nfci_neg.index, y=nfci_neg.values,
+                marker_color=GREEN, opacity=0.7,
+                hovertemplate="<b>NFCI</b>: %{y:+.3f}<extra></extra>"), secondary_y=False)
+            ma52 = nfci_t.rolling(52).mean()
+            fig_nf.add_trace(go.Scatter(name="52W MA", x=ma52.index, y=ma52.values,
+                line=dict(color=WHITE, width=2),
+                hovertemplate="<b>52W MA</b>: %{y:+.3f}<extra></extra>"), secondary_y=False)
+        if len(vix_t):
+            fig_nf.add_trace(go.Scatter(name="VIX", x=vix_t.index, y=vix_t.values,
+                line=dict(color=CYAN, width=1.5, dash="dot"),
+                hovertemplate="<b>VIX</b>: %{y:.1f}<extra></extra>"), secondary_y=True)
+        lay_nf = _layout_sub(300)
+        lay_nf["barmode"] = "overlay"
+        lay_nf["margin"]  = dict(l=55, r=55, t=36, b=36)
+        fig_nf.update_layout(**lay_nf)
+        _style_sub_axes(fig_nf)
+        st.plotly_chart(fig_nf, use_container_width=True, config={"displayModeBar": False})
+
+    # ══ Tab 4: FEDWATCH ═══════════════════════════════════════════════════════
+    with rtabs[3]:
+        _render_fedwatch()
+
+    # ══ Tab 5: RATE SNAPSHOT TABLE ════════════════════════════════════════════
+    with rtabs[4]:
+        _sec("RATE SNAPSHOT — LEVELS & DELTAS")
+
+        snap_map = [
+            ("Fed Funds",       "fedfunds",   "rate"),
+            ("SOFR",            "sofr",       "rate"),
+            ("IORB",            "iorb",       "rate"),
+            ("ON RRP",          "onrrp",      "rate"),
+            ("3M T-Bill",       "dgs3m",      "rate"),
+            ("2Y Treasury",     "dgs2",       "rate"),
+            ("5Y Treasury",     "dgs5",       "rate"),
+            ("10Y Treasury",    "dgs10",      "rate"),
+            ("30Y Treasury",    "dgs30",      "rate"),
+            ("2s10s Spread",    "t10y2y",     "spread"),
+            ("10Y-3M Spread",   "t10y3m",     "spread"),
+            ("10Y Real (TIPS)", "tips10",     "rate"),
+            ("BEI 10Y",         "bei10",      "rate"),
+            ("IG OAS (bp)",     "ig_oas",     "oas"),
+            ("HY OAS (bp)",     "hy_oas",     "oas"),
+            ("VIX",             "vix",        "vix"),
+            ("NFCI",            "nfci",       "nfci"),
+            ("Mortgage 30Y",    "mortgage30", "rate"),
+            ("USD Index",       "dollar",     "idx"),
+        ]
+
+        T2 = "font-family:'Courier New',monospace;"
+        TH  = f"padding:4px 10px;{T2}font-size:9px;font-weight:bold;color:#666;background:#0d0d0d;border-bottom:1px solid #333;border-right:1px solid #1a1a1a;text-align:center;white-space:nowrap;"
+        TH0 = f"padding:4px 12px;{T2}font-size:9px;font-weight:bold;color:#666;background:#0d0d0d;border-bottom:1px solid #333;border-right:1px solid #333;text-align:left;min-width:160px;"
+        hdr_s = f'<tr><th style="{TH0}">INSTRUMENT</th>'
+        for col in ["CURRENT","1W Δ","1M Δ","3M Δ","1Y Δ"]:
+            hdr_s += f'<th style="{TH}">{col}</th>'
+        hdr_s += "</tr>"
+
+        def _snap_fmtc(kind, v):
+            if pd.isna(v): return "—"
+            if kind == "oas":  return f"{v*100:.0f}"
+            if kind == "nfci": return f"{v:+.3f}"
+            if kind in ("vix","idx"): return f"{v:.1f}"
+            return f"{v:.2f}%"
+
+        def _snap_fmtd(kind, v):
+            if pd.isna(v): return "—"
+            if kind == "oas":  return f"{v*100:+.0f}"
+            if kind == "nfci": return f"{v:+.3f}"
+            if kind in ("vix","idx"): return f"{v:+.1f}"
+            return f"{v:+.2f}%"
+
+        def _snap_delta_style(v, kind):
+            if pd.isna(v): return f"padding:3px 10px;{T2}font-size:10px;text-align:right;background:#0a0a0a;color:#333;border-right:1px solid #111;white-space:nowrap;"
+            raw = v * 100 if kind == "oas" else v
+            thr = 0.5 if kind not in ("vix","idx","nfci") else (3 if kind=="vix" else 1)
+            if raw > thr:   bg,fg = "#2a0606","#f87171"
+            elif raw > 0.05:bg,fg = "#1a0505","#fca5a5"
+            elif raw < -thr:bg,fg = "#062910","#34d399"
+            elif raw < -0.05:bg,fg = "#041a0a","#6ee7b7"
+            else:            bg,fg = "#0a0a0a","#666"
+            return f"padding:3px 10px;{T2}font-size:10px;font-weight:bold;text-align:right;background:{bg};color:{fg};border-right:1px solid #111;white-space:nowrap;"
+
+        body_s = ""
+        for label, key, kind in snap_map:
+            s = D[key].dropna()
+            cur = float(s.iloc[-1]) if len(s) else float("nan")
+            deltas = []
+            for days in [5, 22, 63, 252]:
+                deltas.append(float(s.iloc[-1] - s.iloc[-days]) if len(s) > days else float("nan"))
+
+            nm_td = f'<td style="padding:3px 12px;{T2}font-size:10px;font-weight:bold;color:#ccc;background:#000;border-right:1px solid #333;white-space:nowrap;">{label}</td>'
+            cv_td = f'<td style="padding:3px 10px;{T2}font-size:10px;font-weight:bold;text-align:right;background:#0a0a0a;color:{GOLD};border-right:1px solid #111;white-space:nowrap;">{_snap_fmtc(kind, cur)}</td>'
+            d_tds = "".join(f'<td style="{_snap_delta_style(d, kind)}">{_snap_fmtd(kind, d)}</td>' for d in deltas)
+            body_s += f"<tr>{nm_td}{cv_td}{d_tds}</tr>"
+
+        st.markdown(f"""
+        <div style="overflow-x:auto;border:1px solid #2a2a2a;background:#000;margin-bottom:4px;">
+          <table style="border-collapse:collapse;width:100%;">
+            <thead>{hdr_s}</thead><tbody>{body_s}</tbody>
+          </table>
+        </div>
+        <div style="color:#444;font-size:9px;{T2}margin-bottom:10px;">
+          FRED &nbsp;·&nbsp; US Treasury &nbsp;·&nbsp; OAS in basis points (BAML ×100) &nbsp;·&nbsp; Red = rising rate / Green = falling
+        </div>""", unsafe_allow_html=True)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 #  MAIN
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def render():
-    subtabs = st.tabs(["GDP", "LABOR", "INFLATION"])
+    subtabs = st.tabs(["GDP", "LABOR", "INFLATION", "RATES"])
     with subtabs[0]: _render_gdp()
     with subtabs[1]: _render_labor()
     with subtabs[2]: _render_inflation()
+    with subtabs[3]: _render_rates()
