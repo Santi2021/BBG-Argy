@@ -662,14 +662,14 @@ def _render_labor():
             hovertemplate="<b>Total NFP</b>: %{y:+.0f}K<extra></extra>",
         ))
     fig_sec.add_hline(y=0, line_color="#333", line_width=1)
-    lay_sec = _layout(460)
+    lay_sec = _layout(420)
     lay_sec["barmode"] = "relative"
-    lay_sec["margin"] = dict(l=55, r=20, t=140, b=36)
+    lay_sec["margin"] = dict(l=55, r=20, t=72, b=36)
     lay_sec["legend"] = dict(
         bgcolor="rgba(0,0,0,0)",
         font=dict(color=TEXT, size=9, family="Courier New"),
         orientation="h",
-        yanchor="top", y=1.15,
+        yanchor="bottom", y=1.02,
         xanchor="left", x=0,
         tracegroupgap=2,
         entrywidth=130,
