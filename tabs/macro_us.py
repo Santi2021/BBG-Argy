@@ -369,7 +369,11 @@ def _render_gdp():
         marker=dict(symbol="diamond", size=7, color=WHITE),
         hovertemplate="<b>Total GDP</b>: %{y:+.2f}%<extra></extra>",
     ))
-    fig.update_layout(**_layout(400))
+    lay_gdp = _layout(420)
+    lay_gdp["margin"] = dict(l=55, r=20, t=56, b=36)
+    lay_gdp["legend"]["y"] = 1.0
+    lay_gdp["legend"]["yanchor"] = "bottom"
+    fig.update_layout(**lay_gdp)
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     # Drill-downs (igual al original)
@@ -377,16 +381,26 @@ def _render_gdp():
     dtabs = st.tabs(["Consumption", "Investment", "Government", "Net Exports", "Final Sales"])
 
     def _drill_layout(subtitle):
-        """Layout for drill-down charts — legend below subtitle, no overlap."""
+        """Layout for drill-down charts — subtitle top, legend below it, no overlap."""
         lay = _layout(320)
-        lay["margin"] = dict(l=55, r=20, t=62, b=36)
-        lay["legend"]["y"] = 1.0
-        lay["legend"]["yanchor"] = "bottom"
+        # t=80: ~14px subtitle + ~4px gap + ~28px legend row + 34px buffer
+        lay["margin"] = dict(l=55, r=20, t=80, b=36)
+        lay["legend"] = dict(
+            bgcolor="rgba(0,0,0,0)",
+            font=dict(color=TEXT, size=9, family="Courier New"),
+            orientation="h",
+            yanchor="bottom", y=1.0,   # legend sits just above plot area
+            xanchor="left", x=0,
+        )
         lay["annotations"] = [dict(
-            text=subtitle, xref="paper", yref="paper",
-            x=0, y=1.0, xanchor="left", yanchor="bottom",
+            text=subtitle,
+            xref="paper", yref="paper",
+            x=0, y=1.0,
+            xanchor="left", yanchor="top",
+            # positioned above the legend row inside the top margin
             font=dict(family="'Courier New',monospace", size=9, color="#888"),
             showarrow=False,
+            yshift=38,   # push above legend row into the margin space
         )]
         return lay
 
@@ -646,16 +660,17 @@ def _render_labor():
             hovertemplate="<b>Total NFP</b>: %{y:+.0f}K<extra></extra>",
         ))
     fig_sec.add_hline(y=0, line_color="#333", line_width=1)
-    lay_sec = _layout(380)
+    lay_sec = _layout(440)
     lay_sec["barmode"] = "relative"
-    lay_sec["margin"] = dict(l=55, r=20, t=80, b=36)
+    lay_sec["margin"] = dict(l=55, r=20, t=100, b=36)
     lay_sec["legend"] = dict(
         bgcolor="rgba(0,0,0,0)",
         font=dict(color=TEXT, size=9, family="Courier New"),
         orientation="h",
         yanchor="bottom", y=1.0,
         xanchor="left", x=0,
-        tracegroupgap=0,
+        tracegroupgap=4,
+        entrywidth=140,   # fixed column width so items align in a clean grid
     )
     fig_sec.update_layout(**lay_sec)
     st.plotly_chart(fig_sec, use_container_width=True, config={"displayModeBar": False})
