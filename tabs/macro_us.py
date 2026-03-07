@@ -1180,7 +1180,7 @@ def _spr_color(v):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  FEDWATCH — Implied Fed Funds path from ZQ futures (yfinance)
+#  FEDWATCH — Implied Fed Funds path from ZQ futures (Barchart)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # FOMC meeting dates 2025-2026 (hardcoded, updated annually)
@@ -1191,168 +1191,145 @@ FOMC_MEETINGS = [
     "2026-07-29", "2026-09-16", "2026-10-28", "2026-12-09",
 ]
 
-# ZQ contract tickers: ZQ + month code + year (e.g. ZQH25 = March 2025)
 _MONTH_CODES = {1:"F",2:"G",3:"H",4:"J",5:"K",6:"M",
                 7:"N",8:"Q",9:"U",10:"V",11:"X",12:"Z"}
 
-
-def _zq_ticker(year: int, month: int) -> str:
-    return f"ZQ{_MONTH_CODES[month]}{str(year)[-2:]}=F"
+_BC_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Accept-Language": "en-US,en;q=0.5",
+}
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def _load_zq_history(start_date: str = "2024-01-01") -> dict:
+def _load_zq_barchart() -> dict:
     """
-    Descarga histórico de precios de cierre para los contratos ZQ.
-    Prueba múltiples formatos de ticker ya que Yahoo Finance es inconsistente:
-      ZQH25=F  (formato nuevo, 2 dígitos año)
-      ZQH5=F   (formato viejo, 1 dígito año)
-    Usa yf.Ticker().history() como método primario (más confiable que download()).
+    Descarga precios actuales de contratos ZQ desde Barchart.
+    Estrategia: session con XSRF cookie → proxies/core-api/v1/quotes/get
+    Devuelve dict {canon: lastPrice} e.g. {"ZQH25": 95.67, "ZQK25": 95.72, ...}
     """
-    import yfinance as yf
-    today     = pd.Timestamp.today()
-    contracts = {}
-    start     = pd.Timestamp(start_date)
-    end       = today + pd.DateOffset(months=18)
-    cur       = pd.Timestamp(start.year, start.month, 1)
+    from urllib.parse import unquote
+    import time as _time
 
-    def _try_download(ticker: str) -> pd.Series | None:
-        """Intenta bajar con Ticker().history() y si falla con download()."""
-        # Método 1: Ticker().history() — más robusto ante MultiIndex
-        try:
-            t = yf.Ticker(ticker)
-            df = t.history(start=start_date, auto_adjust=True)
-            if df is not None and len(df) > 0 and "Close" in df.columns:
-                s = df["Close"].squeeze()
-                if hasattr(s, "dt"):  # es un DatetimeIndex
-                    return s.dropna()
-                return s.dropna()
-        except Exception:
-            pass
-        # Método 2: download() como fallback
-        try:
-            df = yf.download(ticker, start=start_date,
-                             progress=False, auto_adjust=True)
-            if df is not None and len(df) > 0:
-                if isinstance(df.columns, pd.MultiIndex):
-                    close = df["Close"].xs(ticker, axis=1, level=1) \
-                            if ticker in df["Close"].columns else df["Close"].iloc[:, 0]
-                else:
-                    close = df["Close"]
-                return close.squeeze().dropna()
-        except Exception:
-            pass
-        return None
+    try:
+        session = requests.Session()
+        session.headers.update(_BC_HEADERS)
 
-    while cur <= end:
-        year2 = str(cur.year)[-2:]   # "25"
-        year1 = str(cur.year)[-1:]   # "5"
-        mc    = _MONTH_CODES[cur.month]
-        # Probar formatos en orden de probabilidad
-        for fmt in [f"ZQ{mc}{year2}=F", f"ZQ{mc}{year1}=F"]:
-            s = _try_download(fmt)
-            if s is not None and len(s) > 0:
-                # Normalizar índice a UTC-naive
-                if hasattr(s.index, "tz") and s.index.tz is not None:
-                    s.index = s.index.tz_localize(None)
-                # Guardar bajo el ticker canónico (mes/año)
-                canon = f"ZQ{mc}{year2}"
-                contracts[canon] = s
-                break  # no seguir probando formatos
+        # 1. Hit home para obtener cookies
+        session.get("https://www.barchart.com", timeout=10)
+        _time.sleep(0.5)
 
-        cur += pd.DateOffset(months=1)
-    return contracts
+        # 2. Hit página de futuros ZQ
+        session.get(
+            "https://www.barchart.com/futures/quotes/ZQ*0/futures-prices",
+            timeout=10,
+        )
+
+        # 3. Extraer y decodificar XSRF token
+        xsrf_raw = session.cookies.get("XSRF-TOKEN", "")
+        if not xsrf_raw:
+            return {}
+        xsrf = unquote(xsrf_raw)
+
+        # 4. Generar lista de contratos: mes actual → +18 meses
+        today = _dt.today()
+        contratos = []
+        for yr_offset in range(3):   # 3 años: 25, 26, 27
+            yr = today.year + yr_offset
+            y2 = str(yr)[-2:]
+            for m in range(1, 13):
+                if yr == today.year and m < today.month:
+                    continue
+                contratos.append(f"ZQ{_MONTH_CODES[m]}{y2}")
+        symbols = ",".join(contratos[:20])
+
+        # 5. API call
+        api_url = (
+            f"https://www.barchart.com/proxies/core-api/v1/quotes/get"
+            f"?symbols={symbols}"
+            f"&fields=symbol,contractName,lastPrice,priceChange,volume,openInterest"
+            f"&raw=1"
+        )
+        resp = session.get(api_url, headers={
+            "Accept": "application/json",
+            "X-XSRF-TOKEN": xsrf,
+            "Referer": "https://www.barchart.com/futures/quotes/ZQ*0/futures-prices",
+        }, timeout=10)
+
+        if resp.status_code != 200:
+            return {}
+
+        data = resp.json()
+        result = {}
+        for q in data.get("data", []):
+            raw   = q.get("raw", {})
+            sym   = raw.get("symbol", "")
+            price = raw.get("lastPrice")
+            vol   = raw.get("volume", 0)
+            oi    = raw.get("openInterest", 0)
+            chg   = raw.get("priceChange", 0)
+            name  = raw.get("contractName", "")
+            if sym and price:
+                result[sym] = {
+                    "price": price,
+                    "rate":  round(100.0 - price, 4),
+                    "chg":   chg,
+                    "vol":   vol,
+                    "oi":    oi,
+                    "name":  name,
+                }
+        return result
+
+    except Exception:
+        return {}
 
 
-def _implied_rate_for_meeting(meeting_dt: pd.Timestamp,
-                               zq_data: dict,
-                               as_of: pd.Timestamp) -> float:
+def _rate_for_meeting(meeting_dt: pd.Timestamp, zq_data: dict) -> float:
     """
-    Tasa implícita de Fed Funds para un meeting FOMC dado.
-    Metodología: implied_rate = 100 - precio_cierre del contrato ZQ del mes.
+    Tasa implícita para un meeting FOMC dado.
+    Busca el contrato ZQ del mes del meeting en zq_data (Barchart).
     """
     year2 = str(meeting_dt.year)[-2:]
     mc    = _MONTH_CODES[meeting_dt.month]
     canon = f"ZQ{mc}{year2}"
-    s = zq_data.get(canon)
-    if s is None or len(s) == 0:
+    entry = zq_data.get(canon)
+    if entry is None:
         return float("nan")
-
-    # Normalizar índice
-    idx = s.index
-    if hasattr(idx, "tz") and idx.tz is not None:
-        idx = idx.tz_localize(None)
-        s = pd.Series(s.values, index=idx)
-
-    avail = s[s.index <= as_of]
-    if len(avail) == 0:
-        return float("nan")
-    return 100.0 - float(avail.iloc[-1])
+    return entry.get("rate", float("nan"))
 
 
-def _build_fw_curve(as_of: pd.Timestamp, zq_data: dict):
-    """Devuelve (labels, rates_pct) para todos los meetings futuros a as_of."""
-    today_ts = as_of
-    meetings  = [pd.Timestamp(m) for m in FOMC_MEETINGS if pd.Timestamp(m) >= today_ts - pd.Timedelta(days=5)]
-    labels, rates = [], []
+def _build_fw_curve(zq_data: dict):
+    """
+    Devuelve (labels, rates, changes) para meetings FOMC futuros con datos.
+    """
+    today_ts = pd.Timestamp.today().normalize()
+    meetings = [pd.Timestamp(m) for m in FOMC_MEETINGS
+                if pd.Timestamp(m) >= today_ts - pd.Timedelta(days=5)]
+    labels, rates, changes = [], [], []
     for m in meetings:
-        r = _implied_rate_for_meeting(m, zq_data, as_of)
-        labels.append(m.strftime("%d %b %Y"))
-        rates.append(r)
-    labels = [l for l, r in zip(labels, rates) if not pd.isna(r)]
-    rates  = [r for r in rates if not pd.isna(r)]
-    return labels, rates
-
-
-def _nearest_trading_date(target: pd.Timestamp, all_dates) -> pd.Timestamp | None:
-    avail = [d for d in all_dates if d <= target]
-    return max(avail) if avail else None
+        r = _rate_for_meeting(m, zq_data)
+        if not pd.isna(r):
+            labels.append(m.strftime("%d %b %Y"))
+            rates.append(r)
+            # cambio en bp del contrato correspondiente
+            year2 = str(m.year)[-2:]
+            mc    = _MONTH_CODES[m.month]
+            entry = zq_data.get(f"ZQ{mc}{year2}", {})
+            changes.append(round(entry.get("chg", 0) * -100, 1))  # price chg → bp
+    return labels, rates, changes
 
 
 def _render_fedwatch():
-    _sec("FED FUNDS PATH IMPLÍCITO — ZQ Futures (CME)")
+    _sec("FED FUNDS PATH IMPLÍCITO — ZQ Futures (CME/Barchart)")
 
-    with st.spinner("Descargando contratos ZQ de Fed Funds..."):
-        try:
-            zq_data = _load_zq_history("2023-01-01")
-        except Exception as e:
-            st.error(f"Error cargando ZQ futures: {e}")
-            return
+    with st.spinner("Descargando contratos ZQ..."):
+        zq_data = _load_zq_barchart()
 
     if not zq_data:
-        st.warning("No se pudieron cargar contratos ZQ. Verificar conexión con Yahoo Finance.")
-        with st.expander("Diagnóstico"):
-            st.code(f"""
-Contratos intentados (formato ZQ{{mes}}{{año2}}):
-  ZQH25, ZQJ25, ZQK25, ZQM25, ZQN25, ZQQ25, ...
-  ZQH26, ZQJ26, ZQK26, ...
-
-Formatos probados por contrato:
-  ZQH25=F  (formato nuevo)
-  ZQH5=F   (formato viejo)
-
-Métodos de descarga:
-  1. yf.Ticker(ticker).history()
-  2. yf.download(ticker)
-
-Si el problema persiste, verificar en Python:
-  import yfinance as yf
-  yf.Ticker('ZQM25=F').history(period='5d')
-  yf.Ticker('ZQM5=F').history(period='5d')
-""")
+        st.warning("No se pudieron cargar contratos ZQ desde Barchart. Verificar conexión.")
         return
 
-    # Fecha de referencia = última fecha disponible en el contrato más líquido
-    # Tomamos la fecha más reciente entre todos los contratos disponibles
-    all_dates_union = sorted(set.union(*[set(s.index) for s in zq_data.values() if len(s)]))
-    if not all_dates_union:
-        st.warning("Sin datos de ZQ futures disponibles.")
-        return
-
-    today_avail = all_dates_union[-1]
-
-    # ── KPI: curva actual ──────────────────────────────────────────────────────
-    labels_now, rates_now = _build_fw_curve(today_avail, zq_data)
+    # ── Curva actual ──────────────────────────────────────────────────────────
+    labels_now, rates_now, changes_now = _build_fw_curve(zq_data)
 
     if not rates_now:
         st.warning("No hay meetings futuros con datos disponibles.")
@@ -1362,149 +1339,116 @@ Si el problema persiste, verificar en Python:
     min_rate     = min(rates_now)
     total_cuts   = max(0.0, (front_rate - min_rate) * 100)
     terminal_lbl = labels_now[rates_now.index(min_rate)]
+    n_meetings   = len(rates_now)
 
     _kpi_strip([
-        (f"{front_rate:.2f}%",   "TASA ACTUAL IMPLÍCITA",  f"próximo meeting",             AMBER),
-        (f"{min_rate:.2f}%",     "TASA TERMINAL IMPLÍCITA",f"mín del ciclo ({terminal_lbl})", CYAN),
-        (f"{total_cuts:.0f}bp",  "RECORTES TOTALES",        "frente → piso",               GREEN if total_cuts > 0 else MUTED),
-        (f"{today_avail.strftime('%d %b %Y')}", "DATOS AL", "ZQ futures", MUTED),
+        (f"{front_rate:.2f}%",  "TASA PRÓX. MEETING",    labels_now[0],                  AMBER),
+        (f"{min_rate:.2f}%",    "TASA TERMINAL",          f"mín ciclo · {terminal_lbl}",  CYAN),
+        (f"{total_cuts:.0f}bp", "RECORTES IMPLÍCITOS",    "frente → piso",                GREEN if total_cuts > 0 else MUTED),
+        (f"{n_meetings}",       "MEETINGS CON DATOS",     "vía Barchart · ZQ",            MUTED),
     ])
 
-    # ── Tab A: Curva actual vs 30/60/90 días atrás ────────────────────────────
-    fw_tabs = st.tabs(["Curva implícita", "Path histórico"])
+    # ── Gráfico curva forward ─────────────────────────────────────────────────
+    fig_fw = go.Figure()
 
-    with fw_tabs[0]:
-        _sec("CURVA IMPLÍCITA HOY vs 30 / 60 / 90 DÍAS ATRÁS")
+    # Área de rango posible (±25bp)
+    fig_fw.add_trace(go.Scatter(
+        x=labels_now + labels_now[::-1],
+        y=[r + 0.25 for r in rates_now] + [r - 0.25 for r in rates_now[::-1]],
+        fill="toself", fillcolor="rgba(255,102,0,0.05)",
+        line=dict(color="rgba(0,0,0,0)"),
+        showlegend=False, hoverinfo="skip",
+    ))
 
-        scenarios = [
-            ("Hoy",         today_avail,                                              CYAN,   "solid", 2.5),
-            ("Hace 30d",    _nearest_trading_date(today_avail - pd.Timedelta(30), all_dates_union),  AMBER,  "dot",   2.0),
-            ("Hace 60d",    _nearest_trading_date(today_avail - pd.Timedelta(60), all_dates_union),  GREEN,  "dash",  1.5),
-            ("Hace 90d",    _nearest_trading_date(today_avail - pd.Timedelta(90), all_dates_union),  VIOLET, "dot",   1.5),
-        ]
+    # Curva principal
+    fig_fw.add_trace(go.Scatter(
+        name="Tasa implícita",
+        x=labels_now, y=rates_now,
+        mode="lines+markers+text",
+        line=dict(color=ORANGE, width=2.5),
+        marker=dict(size=8, color=ORANGE,
+                    line=dict(color=BG2, width=1.5)),
+        text=[f"{r:.2f}%" for r in rates_now],
+        textposition="top center",
+        textfont=dict(size=8, color=GOLD, family="'Courier New',monospace"),
+        hovertemplate="<b>%{x}</b><br>Tasa implícita: <b>%{y:.2f}%</b><extra></extra>",
+    ))
 
-        # Meetings comunes entre todas las curvas disponibles
-        all_curves = {}
-        for lbl, dt, *_ in scenarios:
-            if dt is None: continue
-            labs, rts = _build_fw_curve(dt, zq_data)
-            if labs: all_curves[lbl] = {l: r for l, r in zip(labs, rts)}
+    # Línea de tasa actual Fed (EFFR ~4.33% aprox)
+    fig_fw.add_hline(
+        y=front_rate, line_dash="dot", line_color=AMBER,
+        annotation_text=f"Próx. meeting {front_rate:.2f}%",
+        annotation_font=dict(size=8, color=AMBER,
+                             family="'Courier New',monospace"),
+        annotation_position="bottom right",
+    )
 
-        if all_curves:
-            common = set.intersection(*[set(d.keys()) for d in all_curves.values()])
-            common_sorted = sorted(common, key=lambda x: pd.to_datetime(x, dayfirst=True))
+    lay_fw = _layout(310)
+    lay_fw["margin"]            = dict(l=55, r=20, t=30, b=80)
+    lay_fw["xaxis"]["tickangle"] = -40
+    lay_fw["xaxis"]["showgrid"]  = True
+    lay_fw["xaxis"]["gridcolor"] = GRID
+    lay_fw["yaxis"]["tickformat"] = ".2f"
+    lay_fw["yaxis"]["ticksuffix"] = "%"
+    lay_fw["showlegend"] = False
+    fig_fw.update_layout(**lay_fw)
+    st.plotly_chart(fig_fw, use_container_width=True, config={"displayModeBar": False})
 
-            fig_fw = go.Figure()
-            for lbl, dt, color, dash, width in scenarios:
-                if lbl not in all_curves or not common_sorted: continue
-                d = all_curves[lbl]
-                ys = [d[m] for m in common_sorted if m in d]
-                xs = [m for m in common_sorted if m in d]
-                if not xs: continue
-                dt_str = dt.strftime("%d %b %Y") if dt else ""
-                fig_fw.add_trace(go.Scatter(
-                    name=f"{lbl} ({dt_str})",
-                    x=xs, y=ys,
-                    mode="lines+markers",
-                    line=dict(color=color, width=width, dash=dash),
-                    marker=dict(size=6, color=color),
-                    hovertemplate=f"<b>{lbl}</b> %{{x}}: %{{y:.2f}}%<extra></extra>",
-                ))
+    # ── Tabla HTML detallada ──────────────────────────────────────────────────
+    _sec("TABLA — CURVA IMPLÍCITA POR MEETING")
+    T3     = "font-family:'Courier New',monospace;"
+    TH_s   = f"padding:4px 10px;{T3}font-size:9px;color:#666;background:#0d0d0d;border-bottom:1px solid #333;border-right:1px solid #1a1a1a;text-align:center;"
+    TH0_s  = f"padding:4px 10px;{T3}font-size:9px;color:#666;background:#0d0d0d;border-bottom:1px solid #333;border-right:1px solid #333;text-align:left;"
+    hdr    = (f'<tr>'
+              f'<th style="{TH0_s}">MEETING</th>'
+              f'<th style="{TH_s}">CONTRATO</th>'
+              f'<th style="{TH_s}">TASA IMPL.</th>'
+              f'<th style="{TH_s}">vs PRÓX.</th>'
+              f'<th style="{TH_s}">CHG (bp)</th>'
+              f'<th style="{TH_s}">VOL</th>'
+              f'</tr>')
+    body = ""
+    for i, (lbl, rate, chg_bp) in enumerate(zip(labels_now, rates_now, changes_now)):
+        # Buscar metadatos del contrato
+        m_ts  = pd.to_datetime(lbl, dayfirst=True)
+        y2    = str(m_ts.year)[-2:]
+        mc    = _MONTH_CODES[m_ts.month]
+        sym   = f"ZQ{mc}{y2}"
+        entry = zq_data.get(sym, {})
+        vol   = entry.get("vol", 0)
+        vol_s = f"{vol:,}" if vol else "—"
 
-            lay_fw = _layout(320)
-            lay_fw["margin"] = dict(l=55, r=20, t=36, b=80)
-            lay_fw["xaxis"]["tickangle"] = -40
-            lay_fw["xaxis"]["showgrid"]  = True
-            lay_fw["xaxis"]["gridcolor"] = GRID
-            fig_fw.update_layout(**lay_fw)
-            st.plotly_chart(fig_fw, use_container_width=True, config={"displayModeBar": False})
+        delta   = rate - front_rate
+        dcolor  = GREEN if delta < -0.005 else (RED if delta > 0.005 else MUTED)
+        chg_col = GREEN if chg_bp < 0 else (RED if chg_bp > 0 else MUTED)
 
-        # Tabla HTML de la curva actual
-        _sec("TABLA — CURVA ACTUAL")
-        T3 = "font-family:'Courier New',monospace;"
-        TH_fw  = f"padding:4px 12px;{T3}font-size:9px;color:#666;background:#0d0d0d;border-bottom:1px solid #333;border-right:1px solid #1a1a1a;text-align:center;"
-        TH0_fw = f"padding:4px 12px;{T3}font-size:9px;color:#666;background:#0d0d0d;border-bottom:1px solid #333;border-right:1px solid #333;text-align:left;"
-        hdr_fw = f'<tr><th style="{TH0_fw}">MEETING</th><th style="{TH_fw}">TASA IMPLÍCITA</th><th style="{TH_fw}">vs TASA ACTUAL</th></tr>'
-        body_fw = ""
-        current_rate = rates_now[0] if rates_now else float("nan")
-        for lbl, rate in zip(labels_now, rates_now):
-            delta = rate - current_rate
-            dcolor = GREEN if delta < -0.01 else (RED if delta > 0.01 else "#888")
-            delta_s = f'<span style="color:{dcolor};font-weight:bold">{delta:+.2f}%</span>'
-            rate_s  = f'<span style="color:{GOLD};font-weight:bold">{rate:.2f}%</span>'
-            body_fw += f'<tr><td style="padding:3px 12px;{T3}font-size:10px;color:#ccc;background:#000;border-right:1px solid #333;">{lbl}</td><td style="padding:3px 10px;{T3}font-size:10px;text-align:right;background:#0a0a0a;border-right:1px solid #111;">{rate_s}</td><td style="padding:3px 10px;{T3}font-size:10px;text-align:right;background:#0a0a0a;border-right:1px solid #111;">{delta_s}</td></tr>'
-        st.markdown(f'<div style="overflow-x:auto;border:1px solid #2a2a2a;background:#000;margin-bottom:8px;max-width:480px;"><table style="border-collapse:collapse;width:100%;"><thead>{hdr_fw}</thead><tbody>{body_fw}</tbody></table></div>', unsafe_allow_html=True)
+        rate_s  = f'<span style="color:{GOLD};font-weight:bold">{rate:.2f}%</span>'
+        delta_s = f'<span style="color:{dcolor};font-weight:bold">{delta:+.2f}%</span>'
+        chg_s   = f'<span style="color:{chg_col};font-weight:bold">{chg_bp:+.1f}</span>'
+        bg_row  = "#000" if i % 2 == 0 else "#060606"
+        body   += (f'<tr>'
+                   f'<td style="padding:3px 10px;{T3}font-size:10px;color:#ccc;background:{bg_row};border-right:1px solid #1a1a1a;">{lbl}</td>'
+                   f'<td style="padding:3px 10px;{T3}font-size:9px;color:{MUTED};background:{bg_row};border-right:1px solid #1a1a1a;text-align:center;">{sym}</td>'
+                   f'<td style="padding:3px 10px;{T3}font-size:10px;text-align:right;background:{bg_row};border-right:1px solid #1a1a1a;">{rate_s}</td>'
+                   f'<td style="padding:3px 10px;{T3}font-size:10px;text-align:right;background:{bg_row};border-right:1px solid #1a1a1a;">{delta_s}</td>'
+                   f'<td style="padding:3px 10px;{T3}font-size:10px;text-align:right;background:{bg_row};border-right:1px solid #1a1a1a;">{chg_s}</td>'
+                   f'<td style="padding:3px 10px;{T3}font-size:9px;color:{MUTED};text-align:right;background:{bg_row};">{vol_s}</td>'
+                   f'</tr>')
 
-    with fw_tabs[1]:
-        _sec("PATH HISTÓRICO — RECORTES Y TASA TERMINAL IMPLÍCITA")
+    st.markdown(
+        f'<div style="overflow-x:auto;border:1px solid #2a2a2a;background:#000;margin-bottom:8px;">'
+        f'<table style="border-collapse:collapse;width:100%;">'
+        f'<thead>{hdr}</thead><tbody>{body}</tbody></table></div>',
+        unsafe_allow_html=True,
+    )
 
-        records = []
-        # Calcular para cada fecha disponible en el histórico (desde hace ~2 años)
-        cutoff = today_avail - pd.DateOffset(years=2)
-        sample_dates = [d for d in all_dates_union if d >= cutoff]
-        # Sub-muestrear a semanal para no hacer demasiados cálculos
-        sample_dates_weekly = []
-        last_sampled = None
-        for d in sorted(sample_dates):
-            if last_sampled is None or (d - last_sampled).days >= 5:
-                sample_dates_weekly.append(d)
-                last_sampled = d
-
-        for d in sample_dates_weekly:
-            lbs, rts = _build_fw_curve(d, zq_data)
-            if len(rts) < 2: continue
-            fr   = rts[0]
-            minr = min(rts)
-            cuts = max(0.0, (fr - minr) * 100)
-            records.append({"date": d, "front_rate": fr, "terminal_rate": minr, "total_cuts_bps": cuts})
-
-        if not records:
-            st.info("Insuficiente historia para mostrar el path.")
-            return
-
-        path_df = pd.DataFrame(records).sort_values("date")
-
-        # Gráfico 1: Recortes implícitos a lo largo del tiempo
-        fig_cuts = make_subplots(rows=2, cols=1, vertical_spacing=0.12,
-                                  subplot_titles=["", ""])
-        fig_cuts.add_trace(go.Scatter(
-            name="Recortes implícitos (bps)",
-            x=path_df["date"], y=path_df["total_cuts_bps"],
-            line=dict(color=CYAN, width=2),
-            fill="tozeroy", fillcolor="rgba(0,212,255,0.07)",
-            hovertemplate="<b>Recortes implícitos</b>: %{y:.0f}bp<extra></extra>",
-        ), row=1, col=1)
-        fig_cuts.add_trace(go.Scatter(
-            name="Tasa terminal implícita (%)",
-            x=path_df["date"], y=path_df["terminal_rate"],
-            line=dict(color=GREEN, width=2),
-            hovertemplate="<b>Tasa terminal</b>: %{y:.2f}%<extra></extra>",
-        ), row=2, col=1)
-
-        lay_cuts = _layout_sub(440)
-        lay_cuts["margin"] = dict(l=55, r=20, t=36, b=36)
-        lay_cuts["showlegend"] = True
-        fig_cuts.update_layout(**lay_cuts)
-
-        # Estilo manual de los ejes de cada subplot
-        fig_cuts.update_xaxes(gridcolor=GRID, linecolor=GRID, tickfont=dict(color="#aaaaaa", size=9))
-        fig_cuts.update_yaxes(gridcolor=GRID, linecolor=GRID, zeroline=False, tickfont=dict(color="#aaaaaa", size=9))
-
-        # Anotaciones manuales como títulos de subplot (evitar "undefined")
-        fig_cuts.add_annotation(text="Recortes totales implícitos (bps)", xref="paper", yref="paper",
-            x=0, y=1.01, showarrow=False, font=dict(color=MUTED, size=9, family="'Courier New',monospace"), xanchor="left")
-        fig_cuts.add_annotation(text="Tasa terminal implícita (%)", xref="paper", yref="paper",
-            x=0, y=0.44, showarrow=False, font=dict(color=MUTED, size=9, family="'Courier New',monospace"), xanchor="left")
-
-        st.plotly_chart(fig_cuts, use_container_width=True, config={"displayModeBar": False})
-
-        st.markdown(
-            f'<div style="color:{MUTED};font-size:9px;font-family:\'Courier New\',monospace;margin-top:4px;">'
-            f'Fuente: CME 30-Day Fed Funds Futures (ZQ) via Yahoo Finance &nbsp;·&nbsp; '
-            f'Metodología: tasa implícita = 100 − precio &nbsp;·&nbsp; '
-            f'Recortes = tasa del próximo meeting − mínimo del ciclo &nbsp;·&nbsp; '
-            f'Datos muestreados semanalmente</div>',
-            unsafe_allow_html=True)
+    st.markdown(
+        f'<div style="color:{MUTED};font-size:9px;font-family:\'Courier New\',monospace;margin-top:4px;">'
+        f'Fuente: CME 30-Day Fed Funds Futures (ZQ) vía Barchart.com &nbsp;·&nbsp; '
+        f'Metodología: tasa implícita = 100 − precio settle &nbsp;·&nbsp; '
+        f'CHG en bp (inverso al precio) &nbsp;·&nbsp; Cache: 60 min</div>',
+        unsafe_allow_html=True,
+    )
 
 
 def _render_rates():
