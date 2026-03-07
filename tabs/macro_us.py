@@ -380,77 +380,79 @@ def _render_gdp():
     _sec("DRILL-DOWN")
     dtabs = st.tabs(["Consumption", "Investment", "Government", "Net Exports", "Final Sales"])
 
-    def _drill_layout(subtitle):
-        """Layout for drill-down charts — subtitle top, legend below it, no overlap."""
-        lay = _layout(320)
-        # t=80: ~14px subtitle + ~4px gap + ~28px legend row + 34px buffer
-        lay["margin"] = dict(l=55, r=20, t=80, b=36)
+    def _sub(text):
+        """Subtitle line rendered by Streamlit above the chart — no Plotly clipping."""
+        st.markdown(
+            f'<div style="font-family:Courier New,monospace;font-size:9px;'
+            f'color:#777;margin:4px 0 0 0;padding:0;line-height:1.4">{text}</div>',
+            unsafe_allow_html=True
+        )
+
+    def _drill_layout():
+        """Layout for drill-down charts — only legend in top margin, no annotation."""
+        lay = _layout(300)
+        lay["margin"] = dict(l=55, r=20, t=36, b=36)
         lay["legend"] = dict(
             bgcolor="rgba(0,0,0,0)",
             font=dict(color=TEXT, size=9, family="Courier New"),
             orientation="h",
-            yanchor="bottom", y=1.0,   # legend sits just above plot area
+            yanchor="bottom", y=1.0,
             xanchor="left", x=0,
         )
-        lay["annotations"] = [dict(
-            text=subtitle,
-            xref="paper", yref="paper",
-            x=0, y=1.0,
-            xanchor="left", yanchor="top",
-            # positioned above the legend row inside the top margin
-            font=dict(family="'Courier New',monospace", size=9, color="#888"),
-            showarrow=False,
-            yshift=38,   # push above legend row into the margin space
-        )]
         return lay
 
     with dtabs[0]:
+        _sub("Durables &nbsp;&middot;&nbsp; Nondurables &nbsp;&middot;&nbsp; Services &nbsp;&nbsp; ◆ = Total PCE contribution")
         fig = _stacked_fig([
             ("Durables",    _gs(df,GDP_CODES["durables"]),    GDP_COLORS["durables"]),
             ("Nondurables", _gs(df,GDP_CODES["nondurables"]), GDP_COLORS["nondurables"]),
             ("Services",    _gs(df,GDP_CODES["services"]),    GDP_COLORS["services"]),
         ], common, quarters)
         _add_diamond(fig, cons, common, quarters, "Total PCE")
-        fig.update_layout(**_drill_layout("Durables · Nondurables · Services   ◆ = Total PCE contribution"))
+        fig.update_layout(**_drill_layout())
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     with dtabs[1]:
+        _sub("Residential &nbsp;&middot;&nbsp; Nonresidential &nbsp;&middot;&nbsp; Inventories &nbsp;&nbsp; ◆ = Total Investment")
         fig = _stacked_fig([
             ("Residential",    _gs(df,GDP_CODES["residential"]),    GDP_COLORS["residential"]),
             ("Nonresidential", _gs(df,GDP_CODES["nonresidential"]), GDP_COLORS["nonresidential"]),
             ("Inventories",    _gs(df,GDP_CODES["inventories"]),    GDP_COLORS["inventories"]),
         ], common, quarters)
         _add_diamond(fig, inv, common, quarters, "Total Investment")
-        fig.update_layout(**_drill_layout("Residential · Nonresidential · Inventories   ◆ = Total Investment"))
+        fig.update_layout(**_drill_layout())
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     with dtabs[2]:
+        _sub("Federal &nbsp;&middot;&nbsp; State & Local &nbsp;&nbsp; ◆ = Total Government")
         fig = _stacked_fig([
             ("Federal",       _gs(df,GDP_CODES["federal"]),     GDP_COLORS["federal"]),
             ("State & Local", _gs(df,GDP_CODES["state_local"]), GDP_COLORS["state_local"]),
         ], common, quarters)
         _add_diamond(fig, gov, common, quarters, "Total Government")
-        fig.update_layout(**_drill_layout("Federal · State & Local   ◆ = Total Government"))
+        fig.update_layout(**_drill_layout())
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     with dtabs[3]:
+        _sub("Exports &nbsp;&middot;&nbsp; Imports &nbsp;&nbsp; ◆ = Net Exports")
         fig = _stacked_fig([
             ("Exports", _gs(df,GDP_CODES["exports"]), GDP_COLORS["exports"]),
             ("Imports", _gs(df,GDP_CODES["imports"]), GDP_COLORS["imports"]),
         ], common, quarters)
         _add_diamond(fig, nx, common, quarters, "Net Exports")
-        fig.update_layout(**_drill_layout("Exports · Imports   ◆ = Net Exports"))
+        fig.update_layout(**_drill_layout())
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     with dtabs[4]:
         inv_ch = _gs(df,GDP_CODES["inventories"]).reindex(common).fillna(0)
         fs     = gdp.reindex(common).fillna(0) - inv_ch
+        _sub("Final Sales &nbsp;&middot;&nbsp; Inventory Change &nbsp;&nbsp; ◆ = Total GDP")
         fig = _stacked_fig([
             ("Final Sales",      fs,     GDP_COLORS["final_sales"]),
             ("Inventory Change", inv_ch, GDP_COLORS["inv_change"]),
         ], common, quarters)
         _add_diamond(fig, gdp.reindex(common), common, quarters, "Total GDP")
-        fig.update_layout(**_drill_layout("Final Sales · Inventory Change   ◆ = Total GDP"))
+        fig.update_layout(**_drill_layout())
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     # Heatmap table — last 8 quarters — pure HTML Bloomberg style
@@ -660,17 +662,17 @@ def _render_labor():
             hovertemplate="<b>Total NFP</b>: %{y:+.0f}K<extra></extra>",
         ))
     fig_sec.add_hline(y=0, line_color="#333", line_width=1)
-    lay_sec = _layout(440)
+    lay_sec = _layout(460)
     lay_sec["barmode"] = "relative"
-    lay_sec["margin"] = dict(l=55, r=20, t=100, b=36)
+    lay_sec["margin"] = dict(l=55, r=20, t=110, b=36)
     lay_sec["legend"] = dict(
         bgcolor="rgba(0,0,0,0)",
         font=dict(color=TEXT, size=9, family="Courier New"),
         orientation="h",
-        yanchor="bottom", y=1.0,
+        yanchor="top", y=1.15,
         xanchor="left", x=0,
-        tracegroupgap=4,
-        entrywidth=140,   # fixed column width so items align in a clean grid
+        tracegroupgap=2,
+        entrywidth=130,
     )
     fig_sec.update_layout(**lay_sec)
     st.plotly_chart(fig_sec, use_container_width=True, config={"displayModeBar": False})
