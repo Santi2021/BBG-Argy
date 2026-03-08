@@ -348,7 +348,6 @@ def _render_gdp():
         (f"{l_nx:.1f}%"   if l_nx   else "—", "NET EXPORTS", "exports - imports", _cv(l_nx)),
     ])
 
-    # Main chart: stacked bars + diamond total (igual al original)
     _sec("CONTRIBUTIONS TO REAL GDP GROWTH")
     fig = go.Figure()
     for name, key, color in [
@@ -376,12 +375,10 @@ def _render_gdp():
     fig.update_layout(**lay_gdp)
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
-    # Drill-downs (igual al original)
     _sec("DRILL-DOWN")
     dtabs = st.tabs(["Consumption", "Investment", "Government", "Net Exports", "Final Sales"])
 
     def _sub(text):
-        """Subtitle line rendered by Streamlit above the chart — no Plotly clipping."""
         st.markdown(
             f'<div style="font-family:Courier New,monospace;font-size:9px;'
             f'color:#777;margin:4px 0 0 0;padding:0;line-height:1.4">{text}</div>',
@@ -389,7 +386,6 @@ def _render_gdp():
         )
 
     def _drill_layout():
-        """Layout for drill-down charts — only legend in top margin, no annotation."""
         lay = _layout(300)
         lay["margin"] = dict(l=55, r=20, t=36, b=36)
         lay["legend"] = dict(
@@ -455,12 +451,10 @@ def _render_gdp():
         fig.update_layout(**_drill_layout())
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
-    # Heatmap table — last 8 quarters — pure HTML Bloomberg style
     _sec("LAST 8 QUARTERS — CONTRIBUTIONS (pp)")
     last8 = common[-8:]
     ql8   = [_qlabel(d) for d in last8]
 
-    # ordered series with indent markers
     series_map_ordered = [
         ("GDP",             gdp,                                    False),
         ("Consumption",     cons,                                   False),
@@ -580,7 +574,6 @@ def _render_labor():
         (f"{_lat(fs('jolts_openings'))/1000:.1f}M" if _lat(fs('jolts_openings')) else "—", "JOLTS OPEN", "job openings", CYAN),
     ])
 
-    # ── Section 1: Payrolls ──────────────────────────────────────────────────
     _sec("NONFARM PAYROLLS — MONTHLY CHANGE (000s)")
 
     view_opt = st.radio("View", ["Total", "Private vs Government"],
@@ -614,10 +607,8 @@ def _render_labor():
     fig1.update_layout(**_layout(340))
     st.plotly_chart(fig1, use_container_width=True, config={"displayModeBar": False})
 
-    # ── Section 2: Payrolls by sector — BBG-style stacked chart + HTML data table
     _sec("NONFARM PAYROLLS — SECTOR BREAKDOWN")
 
-    # Sector config: (label_short, BLS_ID, color, group)
     SECTOR_CFG = [
         ("Goods Producing",       BLS_IDS["sec_mining"],       "#f59e0b",  "goods"),
         ("Construction",          BLS_IDS["sec_construction"],  "#fbbf24",  "goods"),
@@ -631,7 +622,6 @@ def _render_labor():
         ("Other Services",        BLS_IDS["sec_other"],         "#6b7280",  "services"),
         ("Government",            BLS_IDS["sec_govt_federal"],  "#a78bfa",  "govt"),
     ]
-    # Wider history for the chart
     SECTOR_CUT = -30
 
     sector_series = {}
@@ -640,9 +630,8 @@ def _render_labor():
         s = _bls_s(bls_df, sid).diff()
         sector_series[label] = (s, color)
 
-    # ── Stacked bar chart (BBG-style: stacked contributions, total as white line)
     fig_sec = go.Figure()
-    total_nfp = pay_ch  # already computed above
+    total_nfp = pay_ch
 
     for label, (s, color) in sector_series.items():
         t = _trim(s.dropna(), SECTOR_CUT)
@@ -652,7 +641,6 @@ def _render_labor():
                 marker_color=color, marker_line_width=0,
                 hovertemplate=f"<b>{label}</b>: %{{y:+.0f}}K<extra></extra>",
             ))
-    # Total white line overlay
     tot_t = _trim(total_nfp.dropna(), SECTOR_CUT)
     if len(tot_t):
         fig_sec.add_trace(go.Scatter(
@@ -677,9 +665,6 @@ def _render_labor():
     fig_sec.update_layout(**lay_sec)
     st.plotly_chart(fig_sec, use_container_width=True, config={"displayModeBar": False})
 
-    # ── Integrated data table below chart — pure HTML, Bloomberg style ──────
-
-    # Build last N months columns
     N_MONTHS = 8
     heat_data = {}
     for label, (s, color) in sector_series.items():
@@ -688,13 +673,11 @@ def _render_labor():
             heat_data[label] = {"series": ch, "color": color}
 
     if heat_data:
-        # Get the common last N dates
         all_idx = sorted(set.intersection(*[set(v["series"].index) for v in heat_data.values()]))
         col_dates = sorted(all_idx)[-N_MONTHS:]
         col_labels = [d.strftime("%b-%y") for d in col_dates]
 
         def _td_style(val):
-            """Return (bg, fg) for a payroll change value in thousands."""
             if   val >  80: bg,fg = "#0a3d1f","#4ade80"
             elif val >  30: bg,fg = "#062910","#34d399"
             elif val >   0: bg,fg = "#041a0a","#6ee7b7"
@@ -739,7 +722,6 @@ def _render_labor():
           BLS CES &nbsp;·&nbsp; Monthly net change in thousands &nbsp;·&nbsp; Seasonally adjusted
         </div>""", unsafe_allow_html=True)
 
-    # ── Section 3: Unemployment + LFPR ──────────────────────────────────────
     _sec("UNEMPLOYMENT & LABOR FORCE PARTICIPATION")
 
     fig3 = make_subplots(specs=[[{"secondary_y": True}]])
@@ -762,7 +744,6 @@ def _render_labor():
     _style_sub_axes(fig3)
     st.plotly_chart(fig3, use_container_width=True, config={"displayModeBar": False})
 
-    # ── Section 4: Wages ────────────────────────────────────────────────────
     _sec("AVERAGE HOURLY EARNINGS — YoY %")
 
     fig4 = go.Figure()
@@ -777,7 +758,6 @@ def _render_labor():
     fig4.update_layout(**lay4)
     st.plotly_chart(fig4, use_container_width=True, config={"displayModeBar": False})
 
-    # ── Section 5: JOLTS ────────────────────────────────────────────────────
     _sec("JOLTS DEEP DIVE")
 
     if fred_df.empty:
@@ -925,7 +905,6 @@ def _render_inflation():
         (f"{l_mich:.1f}%"     if l_mich     else "—", "MICH 1Y EXPEC", "consumer survey",    VIOLET),
     ])
 
-    # ── Section 1: CPI + PCE overview ───────────────────────────────────────
     _sec(f"CPI · PCE · CORE — YoY%  ·  {latest_date}")
 
     fig1 = go.Figure()
@@ -945,7 +924,6 @@ def _render_inflation():
     fig1.update_layout(**_layout(320))
     st.plotly_chart(fig1, use_container_width=True, config={"displayModeBar": False})
 
-    # ── Section 2: Component Contributions (stacked bar — igual al original) ─
     _sec("CPI COMPONENT CONTRIBUTIONS")
 
     mode = st.radio("Mode", ["YoY %", "MoM %"], horizontal=True,
@@ -1007,7 +985,6 @@ def _render_inflation():
         fig2.update_layout(**l2)
         st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})
 
-    # ── Section 3: Shelter vs Core ex-Shelter ───────────────────────────────
     _sec("SHELTER vs CORE EX-SHELTER — YoY %")
 
     shelter_yoy     = yoy(cs("cpi_shelter"))
@@ -1029,7 +1006,6 @@ def _render_inflation():
     fig3.update_layout(**_layout(300))
     st.plotly_chart(fig3, use_container_width=True, config={"displayModeBar": False})
 
-    # ── Section 4: Inflation Expectations ───────────────────────────────────
     _sec("INFLATION EXPECTATIONS — TIPS BREAKEVENS & MICHIGAN SURVEY")
 
     exp_tabs = st.tabs(["TIPS Breakevens", "Michigan Survey"])
@@ -1183,7 +1159,6 @@ def _spr_color(v):
 #  FEDWATCH — Implied Fed Funds path from ZQ futures (Barchart)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# FOMC meeting dates 2025-2026 (hardcoded, updated annually)
 FOMC_MEETINGS = [
     "2025-01-29", "2025-03-19", "2025-05-07", "2025-06-18",
     "2025-07-30", "2025-09-17", "2025-10-29", "2025-12-10",
@@ -1202,38 +1177,24 @@ _BC_HEADERS = {
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def _load_zq_barchart() -> dict:
-    """
-    Descarga precios actuales de contratos ZQ desde Barchart.
-    Estrategia: session con XSRF cookie → proxies/core-api/v1/quotes/get
-    Devuelve dict {canon: lastPrice} e.g. {"ZQH25": 95.67, "ZQK25": 95.72, ...}
-    """
     from urllib.parse import unquote
     import time as _time
 
     try:
         session = requests.Session()
         session.headers.update(_BC_HEADERS)
-
-        # 1. Hit home para obtener cookies
         session.get("https://www.barchart.com", timeout=10)
         _time.sleep(0.5)
+        session.get("https://www.barchart.com/futures/quotes/ZQ*0/futures-prices", timeout=10)
 
-        # 2. Hit página de futuros ZQ
-        session.get(
-            "https://www.barchart.com/futures/quotes/ZQ*0/futures-prices",
-            timeout=10,
-        )
-
-        # 3. Extraer y decodificar XSRF token
         xsrf_raw = session.cookies.get("XSRF-TOKEN", "")
         if not xsrf_raw:
             return {}
         xsrf = unquote(xsrf_raw)
 
-        # 4. Generar lista de contratos: mes actual → +18 meses
         today = _dt.today()
         contratos = []
-        for yr_offset in range(3):   # 3 años: 25, 26, 27
+        for yr_offset in range(3):
             yr = today.year + yr_offset
             y2 = str(yr)[-2:]
             for m in range(1, 13):
@@ -1242,7 +1203,6 @@ def _load_zq_barchart() -> dict:
                 contratos.append(f"ZQ{_MONTH_CODES[m]}{y2}")
         symbols = ",".join(contratos[:20])
 
-        # 5. API call
         api_url = (
             f"https://www.barchart.com/proxies/core-api/v1/quotes/get"
             f"?symbols={symbols}"
@@ -1283,11 +1243,61 @@ def _load_zq_barchart() -> dict:
         return {}
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def _load_zq_historical() -> dict:
+    """
+    Historia de contratos ZQ desde Yahoo Finance (ZQH26.CBT, etc).
+    Devuelve dict {canon: pd.Series(index=DatetimeIndex, values=tasa%)}
+    donde tasa% = 100 − precio_cierre. Cubre ~400 días para T-30/90/365.
+    """
+    try:
+        import yfinance as yf
+    except ImportError:
+        return {}
+
+    today = pd.Timestamp.today()
+    contratos = []
+    for yr_offset in range(3):
+        yr = today.year + yr_offset
+        y2 = str(yr)[-2:]
+        for m in range(1, 13):
+            if yr == today.year and m < today.month:
+                continue
+            contratos.append(f"ZQ{_MONTH_CODES[m]}{y2}")
+
+    yf_map = {c: f"{c}.CBT" for c in contratos[:18]}
+    start  = (today - pd.Timedelta(days=400)).strftime("%Y-%m-%d")
+
+    result = {}
+    try:
+        raw = yf.download(
+            " ".join(yf_map.values()),
+            start=start,
+            auto_adjust=True,
+            progress=False,
+        )
+        if raw.empty:
+            return {}
+
+        close = raw["Close"] if "Close" in raw.columns else raw.xs("Close", axis=1, level=0)
+        if isinstance(close.columns, pd.MultiIndex):
+            close.columns = close.columns.get_level_values(-1)
+
+        for canon, yf_sym in yf_map.items():
+            col = yf_sym if yf_sym in close.columns else (canon if canon in close.columns else None)
+            if col is None:
+                continue
+            s = close[col].dropna()
+            if len(s) < 5:
+                continue
+            result[canon] = (100.0 - s).rename(canon)
+    except Exception:
+        return {}
+
+    return result
+
+
 def _rate_for_meeting(meeting_dt: pd.Timestamp, zq_data: dict) -> float:
-    """
-    Tasa implícita para un meeting FOMC dado.
-    Busca el contrato ZQ del mes del meeting en zq_data (Barchart).
-    """
     year2 = str(meeting_dt.year)[-2:]
     mc    = _MONTH_CODES[meeting_dt.month]
     canon = f"ZQ{mc}{year2}"
@@ -1298,9 +1308,6 @@ def _rate_for_meeting(meeting_dt: pd.Timestamp, zq_data: dict) -> float:
 
 
 def _build_fw_curve(zq_data: dict):
-    """
-    Devuelve (labels, rates, changes) para meetings FOMC futuros con datos.
-    """
     today_ts = pd.Timestamp.today().normalize()
     meetings = [pd.Timestamp(m) for m in FOMC_MEETINGS
                 if pd.Timestamp(m) >= today_ts - pd.Timedelta(days=5)]
@@ -1310,12 +1317,40 @@ def _build_fw_curve(zq_data: dict):
         if not pd.isna(r):
             labels.append(m.strftime("%d %b %Y"))
             rates.append(r)
-            # cambio en bp del contrato correspondiente
             year2 = str(m.year)[-2:]
             mc    = _MONTH_CODES[m.month]
             entry = zq_data.get(f"ZQ{mc}{year2}", {})
-            changes.append(round(entry.get("chg", 0) * -100, 1))  # price chg → bp
+            changes.append(round(entry.get("chg", 0) * -100, 1))
     return labels, rates, changes
+
+
+def _curve_at_date(zq_hist: dict, target: pd.Timestamp, tol_days: int = 5) -> tuple:
+    """
+    Reconstruye (labels, rates) de la curva implícita para una fecha pasada.
+    Toma el cierre más cercano a `target` dentro de ±tol_days.
+    Solo incluye meetings que eran futuros en esa fecha.
+    """
+    labels, rates = [], []
+    for m_str in FOMC_MEETINGS:
+        meeting = pd.Timestamp(m_str)
+        if meeting < target:
+            continue
+        y2    = str(meeting.year)[-2:]
+        mc    = _MONTH_CODES[meeting.month]
+        canon = f"ZQ{mc}{y2}"
+        s     = zq_hist.get(canon)
+        if s is None or len(s) == 0:
+            continue
+        diffs = [abs((idx - target).days) for idx in s.index]
+        min_d = min(diffs)
+        if min_d > tol_days:
+            continue
+        rate = float(s.iloc[diffs.index(min_d)])
+        if pd.isna(rate) or rate <= 0 or rate > 10:
+            continue
+        labels.append(meeting.strftime("%d %b %Y"))
+        rates.append(round(rate, 4))
+    return labels, rates
 
 
 def _render_fedwatch():
@@ -1328,7 +1363,6 @@ def _render_fedwatch():
         st.warning("No se pudieron cargar contratos ZQ desde Barchart. Verificar conexión.")
         return
 
-    # ── Curva actual ──────────────────────────────────────────────────────────
     labels_now, rates_now, changes_now = _build_fw_curve(zq_data)
 
     if not rates_now:
@@ -1351,7 +1385,6 @@ def _render_fedwatch():
     # ── Gráfico curva forward ─────────────────────────────────────────────────
     fig_fw = go.Figure()
 
-    # Área de rango posible (±25bp)
     fig_fw.add_trace(go.Scatter(
         x=labels_now + labels_now[::-1],
         y=[r + 0.25 for r in rates_now] + [r - 0.25 for r in rates_now[::-1]],
@@ -1360,31 +1393,27 @@ def _render_fedwatch():
         showlegend=False, hoverinfo="skip",
     ))
 
-    # Curva principal
     fig_fw.add_trace(go.Scatter(
         name="Tasa implícita",
         x=labels_now, y=rates_now,
         mode="lines+markers+text",
         line=dict(color=ORANGE, width=2.5),
-        marker=dict(size=8, color=ORANGE,
-                    line=dict(color=BG2, width=1.5)),
+        marker=dict(size=8, color=ORANGE, line=dict(color=BG2, width=1.5)),
         text=[f"{r:.2f}%" for r in rates_now],
         textposition="top center",
         textfont=dict(size=8, color=GOLD, family="'Courier New',monospace"),
         hovertemplate="<b>%{x}</b><br>Tasa implícita: <b>%{y:.2f}%</b><extra></extra>",
     ))
 
-    # Línea de tasa actual Fed (EFFR ~4.33% aprox)
     fig_fw.add_hline(
         y=front_rate, line_dash="dot", line_color=AMBER,
         annotation_text=f"Próx. meeting {front_rate:.2f}%",
-        annotation_font=dict(size=8, color=AMBER,
-                             family="'Courier New',monospace"),
+        annotation_font=dict(size=8, color=AMBER, family="'Courier New',monospace"),
         annotation_position="bottom right",
     )
 
     lay_fw = _layout(310)
-    lay_fw["margin"]            = dict(l=55, r=20, t=30, b=80)
+    lay_fw["margin"]             = dict(l=55, r=20, t=30, b=80)
     lay_fw["xaxis"]["tickangle"] = -40
     lay_fw["xaxis"]["showgrid"]  = True
     lay_fw["xaxis"]["gridcolor"] = GRID
@@ -1409,7 +1438,6 @@ def _render_fedwatch():
               f'</tr>')
     body = ""
     for i, (lbl, rate, chg_bp) in enumerate(zip(labels_now, rates_now, changes_now)):
-        # Buscar metadatos del contrato
         m_ts  = pd.to_datetime(lbl, dayfirst=True)
         y2    = str(m_ts.year)[-2:]
         mc    = _MONTH_CODES[m_ts.month]
@@ -1442,11 +1470,139 @@ def _render_fedwatch():
         unsafe_allow_html=True,
     )
 
+    # ── Gráfico comparativo histórico ─────────────────────────────────────────
+    _sec("DESPLAZAMIENTO DE LA CURVA — HOY vs T-30 · T-90 · T-365")
+
+    with st.spinner("Cargando historia ZQ..."):
+        zq_hist = _load_zq_historical()
+
+    today_ts = pd.Timestamp.today().normalize()
+
+    snapshots = [
+        ("Hoy",   today_ts,                              ORANGE,    2.5, "solid",   True),
+        ("−30d",  today_ts - pd.Timedelta(days=30),      CYAN,      1.8, "dot",     False),
+        ("−90d",  today_ts - pd.Timedelta(days=90),      GREEN,     1.8, "dash",    False),
+        ("−365d", today_ts - pd.Timedelta(days=365),     "#9b59b6", 1.5, "dashdot", False),
+    ]
+
+    fig_hist = go.Figure()
+    kpi_rows = []
+    has_data = False
+
+    for label, snap_date, color, width, dash, is_today in snapshots:
+        if is_today:
+            lbl_c, rate_c = labels_now, rates_now
+        else:
+            if not zq_hist:
+                continue
+            lbl_c, rate_c = _curve_at_date(zq_hist, snap_date)
+        if not rate_c:
+            continue
+
+        has_data   = True
+        snap_min   = min(rate_c)
+        snap_front = rate_c[0]
+        snap_cuts  = max(0.0, (snap_front - snap_min) * 100)
+        term_lbl   = lbl_c[rate_c.index(snap_min)]
+
+        kpi_rows.append({
+            "label": label, "color": color,
+            "front": snap_front, "terminal": snap_min,
+            "cuts_bp": snap_cuts, "term_lbl": term_lbl,
+        })
+
+        fig_hist.add_trace(go.Scatter(
+            name=label,
+            x=lbl_c, y=rate_c,
+            mode="lines+markers" + ("+text" if is_today else ""),
+            line=dict(color=color, width=width, dash=dash),
+            marker=dict(size=7 if is_today else 5, color=color,
+                        line=dict(color=BG2, width=1)),
+            text=[f"{r:.2f}%" for r in rate_c] if is_today else None,
+            textposition="top center" if is_today else None,
+            textfont=dict(size=8, color=GOLD, family="'Courier New',monospace"),
+            hovertemplate=(
+                f"<b>{label}</b> · %{{x}}<br>"
+                f"Tasa: <b>%{{y:.2f}}%</b><extra></extra>"
+            ),
+        ))
+
+    if has_data:
+        fig_hist.add_hline(
+            y=front_rate, line_dash="dot", line_color=AMBER, line_width=1,
+            annotation_text=f"Tasa actual {front_rate:.2f}%",
+            annotation_font=dict(size=8, color=AMBER, family="'Courier New',monospace"),
+            annotation_position="bottom right",
+        )
+        lay_h = _layout(310)
+        lay_h["margin"]              = dict(l=55, r=20, t=30, b=80)
+        lay_h["xaxis"]["tickangle"]  = -40
+        lay_h["xaxis"]["showgrid"]   = True
+        lay_h["xaxis"]["gridcolor"]  = GRID
+        lay_h["yaxis"]["tickformat"] = ".2f"
+        lay_h["yaxis"]["ticksuffix"] = "%"
+        lay_h["showlegend"]          = True
+        lay_h["legend"] = dict(
+            bgcolor="rgba(0,0,0,0)",
+            font=dict(color=TEXT, size=9, family="'Courier New',monospace"),
+            orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0,
+        )
+        fig_hist.update_layout(**lay_h)
+        st.plotly_chart(fig_hist, use_container_width=True, config={"displayModeBar": False})
+
+    # ── Tabla de desplazamiento ───────────────────────────────────────────────
+    if len(kpi_rows) >= 2:
+        T3    = "font-family:'Courier New',monospace;"
+        TH_s  = f"padding:4px 12px;{T3}font-size:9px;color:#666;background:#0d0d0d;border-bottom:1px solid #333;border-right:1px solid #1a1a1a;text-align:center;"
+        TH0_s = f"padding:4px 12px;{T3}font-size:9px;color:#666;background:#0d0d0d;border-bottom:1px solid #333;border-right:1px solid #333;text-align:left;"
+        hdr_hist = (
+            f'<tr>'
+            f'<th style="{TH0_s}">SNAPSHOT</th>'
+            f'<th style="{TH_s}">TASA FRENTE</th>'
+            f'<th style="{TH_s}">TASA TERMINAL</th>'
+            f'<th style="{TH_s}">RECORTES IMPL.</th>'
+            f'<th style="{TH_s}">MEETING TERMINAL</th>'
+            f'<th style="{TH_s}">Δ FRENTE vs HOY</th>'
+            f'<th style="{TH_s}">Δ TERMINAL vs HOY</th>'
+            f'</tr>'
+        )
+        t_front   = kpi_rows[0]["front"]
+        t_term    = kpi_rows[0]["terminal"]
+        body_hist = ""
+        for i, row in enumerate(kpi_rows):
+            bg  = "#000" if i % 2 == 0 else "#060606"
+            c   = row["color"]
+            df_ = row["front"]    - t_front
+            dt_ = row["terminal"] - t_term
+            dc_f = MUTED if i == 0 else (GREEN if df_ < -0.005 else (RED if df_ > 0.005 else MUTED))
+            dc_t = MUTED if i == 0 else (GREEN if dt_ < -0.005 else (RED if dt_ > 0.005 else MUTED))
+            df_s = "—" if i == 0 else f'<span style="color:{dc_f};font-weight:bold">{df_*100:+.1f}bp</span>'
+            dt_s = "—" if i == 0 else f'<span style="color:{dc_t};font-weight:bold">{dt_*100:+.1f}bp</span>'
+            td   = f"padding:4px 12px;{T3}font-size:10px;background:{bg};border-right:1px solid #1a1a1a;"
+            body_hist += (
+                f'<tr>'
+                f'<td style="{td}color:{c};font-weight:bold">{row["label"]}</td>'
+                f'<td style="{td}text-align:right;color:{GOLD};font-weight:bold">{row["front"]:.2f}%</td>'
+                f'<td style="{td}text-align:right;color:{CYAN};font-weight:bold">{row["terminal"]:.2f}%</td>'
+                f'<td style="{td}text-align:right;color:{"#00ff41" if row["cuts_bp"]>0 else MUTED};font-weight:bold">{row["cuts_bp"]:.0f}bp</td>'
+                f'<td style="{td}text-align:center;color:#aaa">{row["term_lbl"]}</td>'
+                f'<td style="{td}text-align:right">{df_s}</td>'
+                f'<td style="{td}text-align:right">{dt_s}</td>'
+                f'</tr>'
+            )
+        st.markdown(
+            f'<div style="overflow-x:auto;border:1px solid #2a2a2a;background:#000;margin-bottom:8px;">'
+            f'<table style="border-collapse:collapse;width:100%;">'
+            f'<thead>{hdr_hist}</thead><tbody>{body_hist}</tbody></table></div>',
+            unsafe_allow_html=True,
+        )
+    elif not has_data:
+        st.info("No hay datos históricos ZQ disponibles desde Yahoo Finance en este momento.")
+
     st.markdown(
         f'<div style="color:{MUTED};font-size:9px;font-family:\'Courier New\',monospace;margin-top:4px;">'
-        f'Fuente: CME 30-Day Fed Funds Futures (ZQ) vía Barchart.com &nbsp;·&nbsp; '
-        f'Metodología: tasa implícita = 100 − precio settle &nbsp;·&nbsp; '
-        f'CHG en bp (inverso al precio) &nbsp;·&nbsp; Cache: 60 min</div>',
+        f'Fuente: CME 30-Day Fed Funds Futures (ZQ) vía Barchart.com (actual) · Yahoo Finance CBT (historia) &nbsp;·&nbsp; '
+        f'Metodología: tasa implícita = 100 − precio settle &nbsp;·&nbsp; Cache: 60 min</div>',
         unsafe_allow_html=True,
     )
 
@@ -1467,7 +1623,6 @@ def _render_rates():
 
     def tr(s): return _rtrim(s, cut_date)
 
-    # Key values
     l_ff    = _rlast(D["fedfunds"])
     l_2     = _rlast(D["dgs2"])
     l_10    = _rlast(D["dgs10"])
@@ -1493,10 +1648,8 @@ def _render_rates():
         (f"{l_hy_bp:.0f}bp"  if not pd.isna(l_hy_bp) else "—", "HY OAS",      f"IG: {l_ig_bp:.0f}bp",       GREEN if l_hy_bp < 350 else (AMBER if l_hy_bp < 600 else RED)),
     ])
 
-    # ── Subtabs ──────────────────────────────────────────────────────────────
     rtabs = st.tabs(["YIELD CURVE", "FED CORRIDOR", "CREDIT & CONDITIONS", "FEDWATCH", "RATE SNAPSHOT"])
 
-    # ══ Tab 1: YIELD CURVE ═══════════════════════════════════════════════════
     with rtabs[0]:
         ytabs = st.tabs(["Snapshot", "History", "Spreads"])
 
@@ -1543,7 +1696,6 @@ def _render_rates():
             fig_yc.update_layout(**lay_yc)
             st.plotly_chart(fig_yc, use_container_width=True, config={"displayModeBar": False})
 
-            # HTML snapshot table
             _sec("TENOR SNAPSHOT")
             T = "font-family:'Courier New',monospace;"
             th_s = f"padding:4px 12px;{T}font-size:9px;color:#666;background:#0d0d0d;border-bottom:1px solid #333;border-right:1px solid #1a1a1a;text-align:center;white-space:nowrap;"
@@ -1611,7 +1763,6 @@ def _render_rates():
             fig_sp.update_layout(**lay_sp)
             st.plotly_chart(fig_sp, use_container_width=True, config={"displayModeBar": False})
 
-    # ══ Tab 2: FED CORRIDOR ═══════════════════════════════════════════════════
     with rtabs[1]:
         _sec("FED CORRIDOR — FED FUNDS · SOFR · IORB · ON RRP")
 
@@ -1681,7 +1832,6 @@ def _render_rates():
         _style_sub_axes(fig_tr)
         st.plotly_chart(fig_tr, use_container_width=True, config={"displayModeBar": False})
 
-    # ══ Tab 3: CREDIT & CONDITIONS ════════════════════════════════════════════
     with rtabs[2]:
         _sec("CREDIT SPREADS — OAS (basis points)")
 
@@ -1744,11 +1894,9 @@ def _render_rates():
         _style_sub_axes(fig_nf)
         st.plotly_chart(fig_nf, use_container_width=True, config={"displayModeBar": False})
 
-    # ══ Tab 4: FEDWATCH ═══════════════════════════════════════════════════════
     with rtabs[3]:
         _render_fedwatch()
 
-    # ══ Tab 5: RATE SNAPSHOT TABLE ════════════════════════════════════════════
     with rtabs[4]:
         _sec("RATE SNAPSHOT — LEVELS & DELTAS")
 
