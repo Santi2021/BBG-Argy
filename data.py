@@ -10,6 +10,7 @@ Sources:
   - IOL               → cauciones (scraping)
   - PPI               → letras ARS con TNA real (portfoliopersonal.com)
   - RSS feeds         → news ticker (Reuters, CNBC, FT, WSJ, Ámbito, etc.)
+  - Investing.com     → calendario económico semanal (US + ARG)
 """
 
 import streamlit as st
@@ -18,6 +19,9 @@ import yfinance as yf
 import pandas as pd
 import re
 import feedparser
+import json as _json
+import time as _time
+from datetime import datetime as _dt, timedelta as _td
 from itertools import zip_longest
 from bs4 import BeautifulSoup
 
@@ -32,29 +36,20 @@ TTL = 60  # seconds
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  YFINANCE COMPAT — Robust MultiIndex accessor for yfinance >= 0.2.58
-#  En 0.2.66 sin group_by: MultiIndex es (field, ticker) → raw["Close"]["SPY"]
-#  En 0.2.66 con group_by="ticker": MultiIndex es (ticker, field) → raw["SPY"]["Close"]
-#  Esta función detecta el formato y accede correctamente en ambos casos.
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _get_closes(raw: pd.DataFrame, sym: str, n_tickers: int) -> pd.Series:
-    """Extrae la serie Close para `sym` de un DataFrame de yf.download."""
     if n_tickers == 1:
-        # Un solo ticker: siempre raw["Close"] (puede ser MultiIndex o no)
         if isinstance(raw.columns, pd.MultiIndex):
             return raw["Close"].iloc[:, 0]
         return raw["Close"]
-
     if isinstance(raw.columns, pd.MultiIndex):
         level0 = raw.columns.get_level_values(0).tolist()
         if "Close" in level0:
-            # Formato nuevo (field, ticker): raw["Close"]["SPY"]
             return raw["Close"][sym]
         else:
-            # Formato viejo (ticker, field): raw["SPY"]["Close"]
             return raw[sym]["Close"]
     else:
-        # Fallback plano
         return raw[sym]
 
 
@@ -102,7 +97,7 @@ def _normalize_list(data: list) -> list:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  DEBUG: log field names from first API response
+#  DEBUG
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _log_fields(endpoint: str, data):
@@ -495,12 +490,12 @@ def get_curva_rendimientos():
     if not html:
         return [], []
     try:
+        import json
         m_cer = re.search(r'fut_data00\s*=\s*(\[\[.*?\]\])\s*;', html, re.DOTALL)
         m_usd = re.search(r'fut_data02\s*=\s*(\[\[.*?\]\])\s*;', html, re.DOTALL)
         def parse_js_array(match):
             if not match:
                 return []
-            import json
             try:
                 return json.loads(match.group(1))
             except Exception:
@@ -516,10 +511,10 @@ def get_tasas_implicitas():
     if not html:
         return []
     try:
+        import json
         m = re.search(r'var data00\s*=\s*(\[\[.*?\]\])\s*;', html, re.DOTALL)
         if not m:
             return []
-        import json
         return json.loads(m.group(1))
     except Exception:
         return []
@@ -557,15 +552,6 @@ def get_eco_bonos_ars():
 
 @st.cache_data(ttl=TTL, show_spinner=False)
 def get_eco_bonos_by_index(table_index: int):
-    """
-    Devuelve DataFrame de Ecovalores por índice de tabla (confirmados empíricamente):
-      8  → CER  (CUAP, DICP, DIP0, PAP0, PARP, TX26, TX28, TZX26, TZX27, TZX28)
-      13 → Tasa Fija (TO26)
-      16 → BOPREAL (BPOA7, BPOB7, BPOC7)
-      19 → Soberanos USD en ARS (AE38, AL29, AL30, AL35, AL41, GD29, GD30...)
-      22 → Soberanos USD en USD (AE38D, AL30D, GD30D...)
-      25 → Dollar Linked (TZV26)
-    """
     html = get_ecovalores_raw()
     if not html:
         return None
@@ -610,8 +596,7 @@ FX_TICKERS = {
 }
 
 
-def _prev_close_fallback(sym: str) -> float | None:
-    """Obtiene previousClose via fast_info — usado cuando download solo devuelve 1 fila."""
+def _prev_close_fallback(sym: str):
     try:
         fi = yf.Ticker(sym).fast_info
         return float(fi.get("previous_close") or fi.get("previousClose") or 0) or None
@@ -621,11 +606,6 @@ def _prev_close_fallback(sym: str) -> float | None:
 
 @st.cache_data(ttl=TTL, show_spinner=False)
 def get_yf_quotes(tickers_dict: dict):
-    """
-    Batch yfinance quotes — compatible con yfinance 0.2.58+.
-    Usa period='5d' para tener buffer ante feriados/liquidez baja.
-    Fallback a fast_info.previous_close si download devuelve < 2 filas.
-    """
     symbols = list(tickers_dict.values())
     names   = list(tickers_dict.keys())
     n = len(symbols)
@@ -644,9 +624,8 @@ def get_yf_quotes(tickers_dict: dict):
                     chg   = (price - prev) / prev * 100
                 elif len(closes) == 1:
                     price = float(closes.iloc[-1])
-                    # Fallback: buscar previousClose via fast_info
-                    prev = _prev_close_fallback(sym)
-                    chg  = (price - prev) / prev * 100 if prev else 0.0
+                    prev  = _prev_close_fallback(sym)
+                    chg   = (price - prev) / prev * 100 if prev else 0.0
                 else:
                     price = None
                     chg   = 0.0
@@ -716,7 +695,7 @@ def _tna_valida(tna):
 
 @st.cache_data(ttl=TTL, show_spinner=False)
 def get_letras_ppi():
-    import json as _json
+    import json as _json_ppi
     try:
         r = requests.get(
             PPI_LETRAS_URL,
@@ -733,7 +712,7 @@ def get_letras_ppi():
         if not m:
             return []
 
-        data = _json.loads(m.group(1))
+        data = _json_ppi.loads(m.group(1))
         instruments = data.get("props", {}).get("pageProps", {}).get("instruments", [])
 
         result = []
@@ -846,3 +825,294 @@ def get_news_international():
 @st.cache_data(ttl=NEWS_TTL, show_spinner=False)
 def get_news_argentina():
     return _interleave(_news_ambito(), _news_bloomberglinea(), _news_infobae(), _news_cronista(), _news_iprofesional())
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  ECONOMIC CALENDAR — Investing.com scraper
+#  market: "US" (id=5) · "ARG" (id=29, confirmado del HTML de Investing)
+#  Semana lógica: Lun–Vie actual. Si hoy es Sáb/Dom → próxima semana.
+#  TTL: 3600s — el calendario no cambia durante la sesión de trading.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_INVESTING_COUNTRY_CODES = {"US": ["5"], "ARG": ["29"]}
+
+_CAL_MONTH_MAP = {
+    "JAN": "Jan", "FEB": "Feb", "MAR": "Mar", "APR": "Apr",
+    "MAY": "May", "JUN": "Jun", "JUL": "Jul", "AUG": "Aug",
+    "SEP": "Sep", "OCT": "Oct", "NOV": "Nov", "DEC": "Dec",
+}
+
+_CAL_CATS_US = {
+    "Nonfarm Payrolls":        ("LABOR",     3),
+    "Unemployment Rate":       ("LABOR",     3),
+    "ADP Nonfarm":             ("LABOR",     2),
+    "Jobless Claims":          ("LABOR",     2),
+    "JOLTS":                   ("LABOR",     2),
+    "Average Hourly Earnings": ("LABOR",     2),
+    "Participation Rate":      ("LABOR",     1),
+    "Challenger Job Cuts":     ("LABOR",     1),
+    "CPI":                     ("INFLATION", 3),
+    "Core CPI":                ("INFLATION", 3),
+    "PCE Price":               ("INFLATION", 3),
+    "Core PCE":                ("INFLATION", 3),
+    "PPI":                     ("INFLATION", 2),
+    "Import Price":            ("INFLATION", 1),
+    "GDP":                     ("GROWTH",    3),
+    "Retail Sales":            ("GROWTH",    3),
+    "Industrial Production":   ("GROWTH",    2),
+    "Durable Goods":           ("GROWTH",    2),
+    "ISM Manufacturing":       ("GROWTH",    2),
+    "ISM Services":            ("GROWTH",    2),
+    "ISM Non-Manufacturing":   ("GROWTH",    2),
+    "PMI":                     ("GROWTH",    1),
+    "Personal Income":         ("GROWTH",    2),
+    "Personal Spending":       ("GROWTH",    2),
+    "Consumer Confidence":     ("GROWTH",    2),
+    "Michigan Consumer":       ("GROWTH",    2),
+    "Trade Balance":           ("GROWTH",    2),
+    "Housing Starts":          ("HOUSING",   2),
+    "Building Permits":        ("HOUSING",   2),
+    "Existing Home Sales":     ("HOUSING",   2),
+    "New Home Sales":          ("HOUSING",   2),
+    "Pending Home Sales":      ("HOUSING",   1),
+    "Case-Shiller":            ("HOUSING",   1),
+    "FOMC":                    ("FED",       3),
+    "Fed Chair":               ("FED",       3),
+    "Fed Minutes":             ("FED",       3),
+    "Fed Interest Rate":       ("FED",       3),
+    "Federal Reserve":         ("FED",       2),
+    "Treasury":                ("RATES",     2),
+    "Bond Auction":            ("RATES",     1),
+}
+
+_CAL_CATS_ARG = {
+    "CPI":                  ("INFLACIÓN", 3),
+    "Inflation":            ("INFLACIÓN", 3),
+    "IPC":                  ("INFLACIÓN", 3),
+    "INDEC CPI":            ("INFLACIÓN", 3),
+    "Wholesale Price":      ("INFLACIÓN", 2),
+    "GDP":                  ("ACTIVIDAD", 3),
+    "Industrial Production":("ACTIVIDAD", 3),
+    "EMAE":                 ("ACTIVIDAD", 3),
+    "Manufacturing":        ("ACTIVIDAD", 2),
+    "Retail Sales":         ("ACTIVIDAD", 2),
+    "Construction":         ("ACTIVIDAD", 2),
+    "Unemployment":         ("EMPLEO",    3),
+    "Employment":           ("EMPLEO",    2),
+    "Trade Balance":        ("COMERCIO",  3),
+    "Exports":              ("COMERCIO",  2),
+    "Imports":              ("COMERCIO",  2),
+    "Current Account":      ("COMERCIO",  2),
+    "Budget Balance":       ("FISCAL",    3),
+    "Primary Surplus":      ("FISCAL",    3),
+    "Tax Revenue":          ("FISCAL",    2),
+    "Money Supply":         ("MONETARIO", 2),
+    "Interest Rate":        ("MONETARIO", 3),
+    "Central Bank":         ("MONETARIO", 3),
+    "BCRA":                 ("MONETARIO", 3),
+    "FX Reserves":          ("MONETARIO", 3),
+    "Foreign Reserves":     ("MONETARIO", 3),
+}
+
+
+def _cal_week_range():
+    today = _dt.today()
+    wd    = today.weekday()
+    monday = today + _td(days=(7 - wd)) if wd >= 5 else today - _td(days=wd)
+    friday = monday + _td(days=4)
+    return monday.strftime("%Y-%m-%d"), friday.strftime("%Y-%m-%d")
+
+
+def _cal_extract_period(name, release_date=""):
+    skip = {"MOM","YOY","QOQ","YTD","ADJ","NSA","SA","PREL","FINAL",
+            "FLASH","EST","REV","P","F","R","2ND EST","3RD EST"}
+    paren = re.findall(r"\(([^)]+)\)", name)
+    for p in reversed(paren):
+        p_up = p.upper().strip()
+        if p_up in skip:
+            continue
+        for mk in _CAL_MONTH_MAP:
+            if mk in p_up:
+                return p.strip()
+        if re.search(r"Q[1-4]", p_up):
+            return p.strip()
+        if re.search(r"WK|WEEK|" + "|".join(_CAL_MONTH_MAP.keys()), p_up):
+            return p.strip()
+    q = re.search(r"\bQ([1-4])\b", name, re.I)
+    if q:
+        return f"Q{q.group(1)}"
+    for mk, mv in _CAL_MONTH_MAP.items():
+        if re.search(rf"\b{mk}\b", name.upper()):
+            return mv
+    if release_date:
+        try:
+            rd = pd.Timestamp(str(release_date)[:10])
+            if "jobless" in name.lower() or "claims" in name.lower():
+                wk = rd - _td(days=7)
+                return f"Wk {wk.strftime('%b %-d')}"
+            return (rd - pd.DateOffset(months=1)).strftime("%b %Y")
+        except Exception:
+            pass
+    return ""
+
+
+def _cal_classify(name, market):
+    cats = _CAL_CATS_US if market == "US" else _CAL_CATS_ARG
+    nu   = name.upper()
+    for kw in sorted(cats.keys(), key=len, reverse=True):
+        if kw.upper() in nu:
+            return cats[kw]
+    return ("OTHER", 1)
+
+
+def _cal_parse_importance(row_tag, imp_td):
+    if imp_td:
+        dk = imp_td.get("data-img_key", "")
+        if dk.startswith("bull") and dk[4:].isdigit():
+            return min(int(dk[4:]), 3)
+    for attr in ["data-importance", "importance"]:
+        val = row_tag.get(attr, "")
+        if val and str(val).isdigit():
+            return min(int(val), 3)
+    if imp_td:
+        active = sum(
+            1 for i in imp_td.find_all("i")
+            if "Empty" not in " ".join(i.get("class", []))
+        )
+        if active:
+            return min(active, 3)
+    return 1
+
+
+def _cal_parse_html(html_content, market):
+    soup     = BeautifulSoup(html_content, "lxml")
+    events   = []
+    cur_date = None
+
+    for row in soup.find_all("tr"):
+        row_id  = row.get("id", "")
+        row_cls = " ".join(row.get("class", []))
+
+        if "theDay" in row_id or row.find("td", {"class": "theDay"}):
+            td = row.find("td")
+            if td:
+                raw = td.get_text(strip=True)
+                try:
+                    cur_date = pd.Timestamp(raw).strftime("%Y-%m-%d")
+                except Exception:
+                    try:
+                        from dateutil import parser as _dp
+                        cur_date = _dp.parse(raw).strftime("%Y-%m-%d")
+                    except Exception:
+                        cur_date = raw
+            continue
+
+        if "js-event-item" not in row_cls:
+            continue
+
+        try:
+            time_td  = row.find("td", {"class": re.compile(r"\btime\b")})
+            evt_time = time_td.get_text(strip=True) if time_td else ""
+
+            imp_td     = row.find("td", {"class": "sentiment"})
+            importance = _cal_parse_importance(row, imp_td)
+
+            evt_td   = row.find("td", {"class": re.compile(r"\bevent\b")})
+            evt_name = ""
+            if evt_td:
+                a        = evt_td.find("a")
+                evt_name = (a or evt_td).get_text(strip=True)
+                evt_name = re.sub(r"\s+", " ", evt_name).strip()
+            if not evt_name:
+                continue
+
+            act_td  = row.find("td", {"id": re.compile(r"eventActual")})
+            fc_td   = row.find("td", {"id": re.compile(r"eventForecast")})
+            prev_td = row.find("td", {"id": re.compile(r"eventPrevious")})
+
+            actual   = act_td.get_text(strip=True)  if act_td  else ""
+            forecast = fc_td.get_text(strip=True)   if fc_td   else ""
+            previous = prev_td.get_text(strip=True) if prev_td else ""
+
+            rel_dt  = row.get("data-event-datetime", "")
+            period  = _cal_extract_period(evt_name, rel_dt or cur_date or "")
+            cat, ic = _cal_classify(evt_name, market)
+
+            events.append({
+                "date":       cur_date or "",
+                "time_et":    evt_time,
+                "importance": importance,
+                "imp_final":  importance if importance > 0 else ic,
+                "category":   cat,
+                "event":      evt_name,
+                "period":     period,
+                "forecast":   forecast,
+                "previous":   previous,
+                "actual":     actual,
+                "release_dt": rel_dt,
+            })
+        except Exception:
+            continue
+
+    return events
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_economic_calendar(market: str = "US"):
+    """
+    Scraper del calendario económico semanal de Investing.com.
+    market: "US" | "ARG"
+    Devuelve list[dict] o {"error": str} si falla.
+    """
+    date_from, date_to = _cal_week_range()
+
+    try:
+        session = requests.Session()
+        session.headers.update({
+            "User-Agent":
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9",
+        })
+        session.get("https://www.investing.com", timeout=12)
+        _time.sleep(1.2)
+        session.get("https://www.investing.com/economic-calendar/", timeout=12)
+        _time.sleep(1.0)
+
+        r = session.post(
+            "https://www.investing.com/economic-calendar/Service/getCalendarFilteredData",
+            data={
+                "country[]":     _INVESTING_COUNTRY_CODES.get(market, ["5"]),
+                "importance[]":  ["1", "2", "3"],
+                "dateFrom":      date_from,
+                "dateTo":        date_to,
+                "timeZone":      "8",
+                "timeFilter":    "timeRemain",
+                "currentTab":    "custom",
+                "submitFilters": "1",
+                "limit_from":    "0",
+            },
+            headers={
+                "X-Requested-With": "XMLHttpRequest",
+                "Referer":          "https://www.investing.com/economic-calendar/",
+                "Origin":           "https://www.investing.com",
+                "Content-Type":     "application/x-www-form-urlencoded",
+            },
+            timeout=20,
+        )
+
+        if r.status_code != 200:
+            return {"error": f"HTTP {r.status_code}"}
+
+        try:
+            html = _json.loads(r.text).get("data", "")
+        except Exception:
+            html = r.text
+
+        if not html:
+            return {"error": "Respuesta vacía"}
+
+        return _cal_parse_html(html, market)
+
+    except Exception as e:
+        return {"error": str(e)}
