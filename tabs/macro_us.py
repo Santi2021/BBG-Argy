@@ -1,6 +1,6 @@
 """
 tabs/macro_us.py — MACRO US
-Subtabs: GDP · LABOR · INFLATION
+Subtabs: GDP · LABOR · INFLATION · RATES
 Lógica 1:1 con MacroTerminal — solo estilos BBG Argy
 """
 
@@ -39,7 +39,7 @@ BEA_KEY  = "081DA2FC-1900-47A0-A40B-49C31925E395"
 BLS_KEY  = "94e0e0f57c5e4d5397ba3898198927ae"
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  LAYOUT — BBG style, NO title field (causes "undefined")
+#  LAYOUT — BBG style
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _layout(height=360):
@@ -64,7 +64,7 @@ def _layout(height=360):
     )
 
 def _layout_sub(height=340):
-    """Layout for make_subplots figures — no xaxis/yaxis keys (causes 'undefined')."""
+    """Layout for make_subplots figures."""
     return dict(
         paper_bgcolor=BG,
         plot_bgcolor=BG2,
@@ -169,7 +169,7 @@ def _qlabel(ts):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  DATA — BLS
+#  DATA — BLS  (FIX: batches de 10 series, timeout 20s por batch)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 BLS_IDS = {
@@ -213,34 +213,58 @@ BLS_CPI_IDS = {
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def _load_bls(series_dict: dict, start_year=2015):
-    payload = dict(
-        seriesid=list(series_dict.values()),
-        startyear=str(start_year),
-        endyear=str(_dt.now().year),
-        registrationkey=BLS_KEY,
-        annualaverage=False,
-    )
-    resp = requests.post(
-        "https://api.bls.gov/publicAPI/v2/timeseries/data/",
-        data=json.dumps(payload),
-        headers={"Content-type": "application/json"},
-        timeout=45
-    )
-    resp.raise_for_status()
-    rows = []
-    for series in resp.json().get("Results", {}).get("series", []):
-        sid = series["seriesID"]
-        for obs in series.get("data", []):
-            period = obs.get("period","")
-            if not period.startswith("M") or period == "M13":
-                continue
-            try:
-                month = int(period[1:])
-                year  = int(obs["year"])
-                val   = float(obs["value"])
-                rows.append({"series_id": sid, "date": pd.Timestamp(f"{year}-{month:02d}-01"), "value": val})
-            except: continue
-    return pd.DataFrame(rows).sort_values(["series_id","date"]).reset_index(drop=True)
+    """
+    FIX v2: divide las series en batches de 10 con timeout de 20s cada uno.
+    Si un batch falla (timeout u otro error de red), se omite y continúa.
+    Esto evita el HTTPSConnectionPool timeout que bloqueaba toda la sección LABOR.
+    """
+    all_ids = list(series_dict.values())
+    BATCH   = 10   # BLS free tier: max 25 por request; 10 es más seguro
+    TIMEOUT = 20   # segundos por batch — fail fast, no colgar la UI
+    rows    = []
+
+    for i in range(0, len(all_ids), BATCH):
+        batch = all_ids[i:i + BATCH]
+        payload = dict(
+            seriesid=batch,
+            startyear=str(start_year),
+            endyear=str(_dt.now().year),
+            registrationkey=BLS_KEY,
+            annualaverage=False,
+        )
+        try:
+            resp = requests.post(
+                "https://api.bls.gov/publicAPI/v2/timeseries/data/",
+                data=json.dumps(payload),
+                headers={"Content-type": "application/json"},
+                timeout=TIMEOUT,
+            )
+            resp.raise_for_status()
+            for series in resp.json().get("Results", {}).get("series", []):
+                sid = series["seriesID"]
+                for obs in series.get("data", []):
+                    period = obs.get("period", "")
+                    if not period.startswith("M") or period == "M13":
+                        continue
+                    try:
+                        month = int(period[1:])
+                        year  = int(obs["year"])
+                        val   = float(obs["value"])
+                        rows.append({
+                            "series_id": sid,
+                            "date": pd.Timestamp(f"{year}-{month:02d}-01"),
+                            "value": val,
+                        })
+                    except:
+                        continue
+        except Exception:
+            # Un batch fallido no rompe el resto
+            continue
+
+    if not rows:
+        raise RuntimeError("BLS API no devolvió datos — todos los batches fallaron")
+
+    return pd.DataFrame(rows).sort_values(["series_id", "date"]).reset_index(drop=True)
 
 def _bls_s(df, sid):
     return df[df["series_id"]==sid].set_index("date")["value"].sort_index()
@@ -356,7 +380,7 @@ def _render_gdp():
         ("Government",  gov,  GDP_COLORS["government"]),
         ("Net Exports", nx,   GDP_COLORS["net_exports"]),
     ]:
-        vals = name.replace("","") and s.reindex(common).fillna(0).values if False else key.reindex(common).fillna(0).values
+        vals = key.reindex(common).fillna(0).values
         fig.add_trace(go.Bar(
             name=name, x=quarters, y=vals,
             marker_color=color, marker_line_color=BG2, marker_line_width=0.8,
@@ -1245,11 +1269,6 @@ def _load_zq_barchart() -> dict:
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def _load_zq_historical() -> dict:
-    """
-    Historia de contratos ZQ desde Yahoo Finance (ZQH26.CBT, etc).
-    Devuelve dict {canon: pd.Series(index=DatetimeIndex, values=tasa%)}
-    donde tasa% = 100 − precio_cierre. Cubre ~400 días para T-30/90/365.
-    """
     try:
         import yfinance as yf
     except ImportError:
@@ -1325,11 +1344,6 @@ def _build_fw_curve(zq_data: dict):
 
 
 def _curve_at_date(zq_hist: dict, target: pd.Timestamp, tol_days: int = 5) -> tuple:
-    """
-    Reconstruye (labels, rates) de la curva implícita para una fecha pasada.
-    Toma el cierre más cercano a `target` dentro de ±tol_days.
-    Solo incluye meetings que eran futuros en esa fecha.
-    """
     labels, rates = [], []
     for m_str in FOMC_MEETINGS:
         meeting = pd.Timestamp(m_str)
@@ -1382,9 +1396,7 @@ def _render_fedwatch():
         (f"{n_meetings}",       "MEETINGS CON DATOS",     "vía Barchart · ZQ",            MUTED),
     ])
 
-    # ── Gráfico curva forward ─────────────────────────────────────────────────
     fig_fw = go.Figure()
-
     fig_fw.add_trace(go.Scatter(
         x=labels_now + labels_now[::-1],
         y=[r + 0.25 for r in rates_now] + [r - 0.25 for r in rates_now[::-1]],
@@ -1392,7 +1404,6 @@ def _render_fedwatch():
         line=dict(color="rgba(0,0,0,0)"),
         showlegend=False, hoverinfo="skip",
     ))
-
     fig_fw.add_trace(go.Scatter(
         name="Tasa implícita",
         x=labels_now, y=rates_now,
@@ -1404,14 +1415,12 @@ def _render_fedwatch():
         textfont=dict(size=8, color=GOLD, family="'Courier New',monospace"),
         hovertemplate="<b>%{x}</b><br>Tasa implícita: <b>%{y:.2f}%</b><extra></extra>",
     ))
-
     fig_fw.add_hline(
         y=front_rate, line_dash="dot", line_color=AMBER,
         annotation_text=f"Próx. meeting {front_rate:.2f}%",
         annotation_font=dict(size=8, color=AMBER, family="'Courier New',monospace"),
         annotation_position="bottom right",
     )
-
     lay_fw = _layout(310)
     lay_fw["margin"]             = dict(l=55, r=20, t=30, b=80)
     lay_fw["xaxis"]["tickangle"] = -40
@@ -1423,7 +1432,6 @@ def _render_fedwatch():
     fig_fw.update_layout(**lay_fw)
     st.plotly_chart(fig_fw, use_container_width=True, config={"displayModeBar": False})
 
-    # ── Tabla HTML detallada ──────────────────────────────────────────────────
     _sec("TABLA — CURVA IMPLÍCITA POR MEETING")
     T3     = "font-family:'Courier New',monospace;"
     TH_s   = f"padding:4px 10px;{T3}font-size:9px;color:#666;background:#0d0d0d;border-bottom:1px solid #333;border-right:1px solid #1a1a1a;text-align:center;"
@@ -1470,7 +1478,6 @@ def _render_fedwatch():
         unsafe_allow_html=True,
     )
 
-    # ── Gráfico comparativo histórico ─────────────────────────────────────────
     _sec("DESPLAZAMIENTO DE LA CURVA — HOY vs T-30 · T-90 · T-365")
 
     with st.spinner("Cargando historia ZQ..."):
@@ -1544,7 +1551,6 @@ def _render_fedwatch():
         fig_hist.update_layout(**lay_h)
         st.plotly_chart(fig_hist, use_container_width=True, config={"displayModeBar": False})
 
-    # ── Tabla de desplazamiento ───────────────────────────────────────────────
     if len(kpi_rows) >= 2:
         T3    = "font-family:'Courier New',monospace;"
         TH_s  = f"padding:4px 12px;{T3}font-size:9px;color:#666;background:#0d0d0d;border-bottom:1px solid #333;border-right:1px solid #1a1a1a;text-align:center;"
@@ -1942,11 +1948,11 @@ def _render_rates():
             if pd.isna(v): return f"padding:3px 10px;{T2}font-size:10px;text-align:right;background:#0a0a0a;color:#333;border-right:1px solid #111;white-space:nowrap;"
             raw = v * 100 if kind == "oas" else v
             thr = 0.5 if kind not in ("vix","idx","nfci") else (3 if kind=="vix" else 1)
-            if raw > thr:   bg,fg = "#2a0606","#f87171"
-            elif raw > 0.05:bg,fg = "#1a0505","#fca5a5"
-            elif raw < -thr:bg,fg = "#062910","#34d399"
+            if raw > thr:    bg,fg = "#2a0606","#f87171"
+            elif raw > 0.05: bg,fg = "#1a0505","#fca5a5"
+            elif raw < -thr: bg,fg = "#062910","#34d399"
             elif raw < -0.05:bg,fg = "#041a0a","#6ee7b7"
-            else:            bg,fg = "#0a0a0a","#666"
+            else:             bg,fg = "#0a0a0a","#666"
             return f"padding:3px 10px;{T2}font-size:10px;font-weight:bold;text-align:right;background:{bg};color:{fg};border-right:1px solid #111;white-space:nowrap;"
 
         body_s = ""
