@@ -273,16 +273,17 @@ st.markdown(f"""
 #  TABS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-from tabs import overview, argentina, bonos, cer, futuros, mundo, watchlist, macro_us
+from tabs import overview, argentina, bonos, cer, futuros, mundo, watchlist, macro_us, calendar
 
 tabs = st.tabs([
     "OVERVIEW",
-    "🇦🇷 ARGENTINA",
+    "ARGENTINA",
     "BONOS",
     "CER",
     "FUTUROS",
     "MUNDO",
-    "🇺🇸 MACRO US",
+    "MACRO US",
+    "CALENDAR",
     "GRAFICADORA",
 ])
 
@@ -293,6 +294,7 @@ with tabs[3]: cer.render()
 with tabs[4]: futuros.render()
 with tabs[5]: mundo.render()
 with tabs[6]: macro_us.render()
-with tabs[7]: watchlist.render()
+with tabs[7]: calendar.render()
+with tabs[8]: watchlist.render()
 
 st.markdown('<div class="ft">MARKET DATA — ALL RIGHTS RESERVED</div>', unsafe_allow_html=True)
