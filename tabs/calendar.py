@@ -4,7 +4,6 @@ Investing.com scraper · US + ARG · BBG estilo
 """
 
 import streamlit as st
-from data import get_economic_calendar
 
 # ── Paleta (heredada del CSS global de app.py) ─────────────────────────────────
 ORANGE = "#ff6600"
@@ -217,76 +216,17 @@ def _render_calendar_html(records: list, market: str) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  TOGGLE BAR HTML (puro CSS/JS, sin ipywidgets)
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def _toggle_bar(n_us: int, n_arg: int) -> str:
-    T = "font-family:'Courier New',monospace;"
-    return f"""
-    <style>
-      .cal-bar        {{ display:flex; align-items:center; background:#000;
-                        border-bottom:1px solid #222; margin-bottom:0; }}
-      .cal-lbl        {{ flex-shrink:0; padding:0 14px; color:#2a2a2a; font-size:8px;
-                        letter-spacing:2px; text-transform:uppercase; {T}
-                        height:30px; display:flex; align-items:center;
-                        border-right:1px solid #1a1a1a; }}
-      .cal-btn        {{ position:relative; background:#000; border:none;
-                        border-right:1px solid #1a1a1a; color:#444; {T}
-                        font-size:9px; font-weight:bold; letter-spacing:3px;
-                        text-transform:uppercase; padding:0 18px; height:30px;
-                        cursor:pointer; transition:color .15s,background .15s; outline:none; }}
-      .cal-btn::after {{ content:''; position:absolute; bottom:0; left:0; right:0;
-                        height:2px; background:transparent; transition:background .15s; }}
-      .cal-btn:hover  {{ color:#888; background:#0a0a0a; }}
-      .cal-btn.cal-active           {{ color:{ORANGE}; background:#0a0000; }}
-      .cal-btn.cal-active::after    {{ background:{ORANGE}; }}
-      .cal-badge      {{ display:inline-block; margin-left:7px; background:#1a1a1a;
-                        color:#444; font-size:7px; padding:1px 5px; border-radius:2px;
-                        letter-spacing:0; transition:background .15s,color .15s; }}
-      .cal-btn.cal-active .cal-badge {{ background:#2a1000; color:{ORANGE}; }}
-      .cal-spacer     {{ flex:1; }}
-      .cal-src        {{ color:#2a2a2a; font-size:8px; letter-spacing:1px;
-                        padding:0 12px; {T} }}
-    </style>
-    <div class="cal-bar">
-      <span class="cal-lbl">ECO CAL</span>
-      <button class="cal-btn cal-active" id="cal-btn-us"
-              onclick="calSwitch('US')">
-        🇺🇸&nbsp;US<span class="cal-badge" id="cal-bdg-us">{n_us} EVT</span>
-      </button>
-      <button class="cal-btn" id="cal-btn-arg"
-              onclick="calSwitch('ARG')">
-        🇦🇷&nbsp;ARG<span class="cal-badge" id="cal-bdg-arg">{n_arg} EVT</span>
-      </button>
-      <div class="cal-spacer"></div>
-      <span class="cal-src">INVESTING.COM</span>
-    </div>
-    <script>
-      var _calCurrent = 'US';
-      function calSwitch(mkt) {{
-        if (mkt === _calCurrent) return;
-        _calCurrent = mkt;
-        ['US','ARG'].forEach(function(m) {{
-          var btn  = document.getElementById('cal-btn-' + m.toLowerCase());
-          var pane = document.getElementById('cal-pane-' + m.toLowerCase());
-          if (m === mkt) {{
-            btn.classList.add('cal-active');
-            if (pane) pane.style.display = 'block';
-          }} else {{
-            btn.classList.remove('cal-active');
-            if (pane) pane.style.display = 'none';
-          }}
-        }});
-      }}
-    </script>
-    """
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
 #  RENDER PRINCIPAL
+#  Toggle via st.session_state — JS no ejecuta dentro de st.markdown en Streamlit
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def render():
+    from data import get_economic_calendar  # lazy — evita error si data.py viejo
+
+    # ── Estado del toggle ─────────────────────────────────────────────────────
+    if "cal_market" not in st.session_state:
+        st.session_state["cal_market"] = "US"
+
     # ── Cargar datos ──────────────────────────────────────────────────────────
     with st.spinner("Cargando calendario económico..."):
         us_data  = get_economic_calendar("US")
@@ -294,34 +234,87 @@ def render():
 
     us_err  = isinstance(us_data,  dict) and "error" in us_data
     arg_err = isinstance(arg_data, dict) and "error" in arg_data
-
     us_records  = us_data  if isinstance(us_data,  list) else []
     arg_records = arg_data if isinstance(arg_data, list) else []
 
-    # ── Renderizar calendarios ────────────────────────────────────────────────
-    html_us  = _render_calendar_html(us_records,  "US")
-    html_arg = _render_calendar_html(arg_records, "ARG")
-
     # ── Toggle bar ────────────────────────────────────────────────────────────
-    toggle = _toggle_bar(len(us_records), len(arg_records))
+    active  = st.session_state["cal_market"]
+    n_us    = len(us_records)
+    n_arg   = len(arg_records)
 
-    # ── Ensamblar todo en un solo bloque HTML con panes ocultos/visibles ─────
-    full_html = f"""
-    {toggle}
-    <div id="cal-pane-us"  style="display:block">{html_us}</div>
-    <div id="cal-pane-arg" style="display:none">{html_arg}</div>
-    """
+    # CSS que sobreescribe el estilo global de botones solo para esta toggle bar
+    us_active  = active == "US"
+    arg_active = active == "ARG"
 
-    st.markdown(full_html, unsafe_allow_html=True)
+    def _btn_css(is_active):
+        bg    = "#0a0000" if is_active else "#000"
+        color = ORANGE    if is_active else "#444"
+        bb    = f"2px solid {ORANGE}" if is_active else "2px solid transparent"
+        return (
+            f"background:{bg} !important;"
+            f"color:{color} !important;"
+            f"border-left:none !important;"
+            f"border-right:1px solid #1a1a1a !important;"
+            f"border-top:none !important;"
+            f"border-bottom:{bb} !important;"
+            f"border-radius:0 !important;"
+            f"font-family:'Courier New',monospace !important;"
+            f"font-size:9px !important;"
+            f"font-weight:bold !important;"
+            f"letter-spacing:2px !important;"
+            f"padding:0 18px !important;"
+            f"height:30px !important;"
+            f"width:100% !important;"
+        )
 
-    # ── Errores no-fatales (mostrar debajo, no rompen la UI) ──────────────────
-    if us_err:
+    st.markdown(f"""
+    <style>
+      div[data-testid="column"]:nth-child(1) .stButton > button {{
+        {_btn_css(us_active)}
+      }}
+      div[data-testid="column"]:nth-child(2) .stButton > button {{
+        {_btn_css(arg_active)}
+      }}
+      div[data-testid="column"]:nth-child(1) .stButton > button:hover,
+      div[data-testid="column"]:nth-child(2) .stButton > button:hover {{
+        opacity: 0.85 !important;
+      }}
+    </style>
+    <div style="display:flex;align-items:center;background:#000;
+                border-bottom:1px solid #222;padding-left:4px;margin-bottom:2px;">
+      <span style="color:#333;font-size:8px;letter-spacing:2px;
+                   font-family:'Courier New',monospace;padding:0 12px 0 4px;
+                   border-right:1px solid #1a1a1a;margin-right:0;">
+        ECO CAL
+      </span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    col_us, col_arg, col_rest = st.columns([1, 1, 10])
+    with col_us:
+        lbl_us = f"🇺🇸  US  · {n_us} EVT" if us_active else f"🇺🇸  US  · {n_us}"
+        if st.button(lbl_us, key="cal_btn_us", use_container_width=True):
+            st.session_state["cal_market"] = "US"
+            st.rerun()
+    with col_arg:
+        lbl_arg = f"🇦🇷  ARG  · {n_arg} EVT" if arg_active else f"🇦🇷  ARG  · {n_arg}"
+        if st.button(lbl_arg, key="cal_btn_arg", use_container_width=True):
+            st.session_state["cal_market"] = "ARG"
+            st.rerun()
+
+    # ── Renderizar el calendario activo ───────────────────────────────────────
+    records = us_records if active == "US" else arg_records
+    market  = active
+    st.markdown(_render_calendar_html(records, market), unsafe_allow_html=True)
+
+    # ── Errores no-fatales ────────────────────────────────────────────────────
+    if us_err and active == "US":
         st.markdown(
             f'<p style="color:{MUTED};font-family:Courier New;font-size:9px">'
             f'US calendar error: {us_data["error"]}</p>',
             unsafe_allow_html=True
         )
-    if arg_err:
+    if arg_err and active == "ARG":
         st.markdown(
             f'<p style="color:{MUTED};font-family:Courier New;font-size:9px">'
             f'ARG calendar error: {arg_data["error"]}</p>',
