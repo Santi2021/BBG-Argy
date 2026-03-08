@@ -1528,12 +1528,6 @@ def _render_fedwatch():
         ))
 
     if has_data:
-        fig_hist.add_hline(
-            y=front_rate, line_dash="dot", line_color=AMBER, line_width=1,
-            annotation_text=f"Tasa actual {front_rate:.2f}%",
-            annotation_font=dict(size=8, color=AMBER, family="'Courier New',monospace"),
-            annotation_position="bottom right",
-        )
         lay_h = _layout(310)
         lay_h["margin"]              = dict(l=55, r=20, t=30, b=80)
         lay_h["xaxis"]["tickangle"]  = -40
