@@ -367,12 +367,14 @@ def get_cauciones_resumen():
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  US Rates — NY Fed (SOFR, EFFR, OBFR) + Treasury Yields + TIPS + BEI
+#  US Rates — NY Fed (SOFR, EFFR, OBFR) + Investing.com (yields) + FRED (TIPS/BEI)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @st.cache_data(ttl=TTL, show_spinner=False)
 def get_us_rates():
     result = {}
+
+    # ── NY Fed: SOFR / EFFR / OBFR — funcionan, no tocar ───────────────────
     for rate_type, path in [("SOFR", "secured/sofr"), ("EFFR", "unsecured/effr"), ("OBFR", "unsecured/obfr")]:
         try:
             r = requests.get(
@@ -384,42 +386,88 @@ def get_us_rates():
                 rates = data.get("refRates", [])
                 if rates:
                     result[rate_type] = {
-                        "rate": rates[0].get("percentRate"),
-                        "date": rates[0].get("effectiveDate", ""),
+                        "rate":        rates[0].get("percentRate"),
+                        "date":        rates[0].get("effectiveDate", ""),
                         "target_from": rates[0].get("targetRateFrom"),
-                        "target_to": rates[0].get("targetRateTo"),
+                        "target_to":   rates[0].get("targetRateTo"),
                     }
         except Exception:
             pass
 
-    fred_series = {
-        "UST_1M": "DGS1MO", "UST_3M": "DGS3MO", "UST_6M": "DGS6MO",
-        "UST_1Y": "DGS1", "UST_2Y": "DGS2", "UST_5Y": "DGS5",
-        "UST_10Y": "DGS10", "UST_30Y": "DGS30",
-        "TIPS_5Y": "DFII5", "TIPS_10Y": "DFII10",
-        "BEI_5Y": "T5YIE", "BEI_10Y": "T10YIE",
+    # ── Treasury yields — Investing.com (tiempo real, sin key) ──────────────
+    try:
+        inv_headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Accept":          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Referer":         "https://www.investing.com/",
+        }
+        r = requests.get(
+            "https://www.investing.com/rates-bonds/usa-government-bonds",
+            headers=inv_headers, timeout=10
+        )
+        if r.status_code == 200:
+            soup = BeautifulSoup(r.text, "lxml")
+            table = soup.find("table")
+            if table:
+                tenor_map = {
+                    "U.S. 1M":  "UST_1M",  "U.S. 3M":  "UST_3M",
+                    "U.S. 6M":  "UST_6M",  "U.S. 1Y":  "UST_1Y",
+                    "U.S. 2Y":  "UST_2Y",  "U.S. 5Y":  "UST_5Y",
+                    "U.S. 10Y": "UST_10Y", "U.S. 30Y": "UST_30Y",
+                }
+                for row in table.find_all("tr"):
+                    cols = [td.get_text(strip=True) for td in row.find_all("td")]
+                    if len(cols) >= 8:
+                        name = cols[1]
+                        if name in tenor_map:
+                            try:
+                                result[tenor_map[name]] = {
+                                    "rate":       float(cols[2]),
+                                    "change":     cols[6],
+                                    "change_pct": cols[7],
+                                    "time":       cols[8] if len(cols) > 8 else "",
+                                }
+                            except (ValueError, IndexError):
+                                pass
+    except Exception:
+        pass
+
+    # ── TIPS y BEI — FRED API con key (lag 1D, aceptable para estos datos) ──
+    fred_tips = {
+        "TIPS_5Y":  "DFII5",
+        "TIPS_10Y": "DFII10",
+        "BEI_5Y":   "T5YIE",
+        "BEI_10Y":  "T10YIE",
     }
-    for key, series_id in fred_series.items():
-        try:
-            r = requests.get(
-                f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}&cosd=2025-01-01",
-                headers=HEADERS, timeout=8
-            )
-            if r.status_code == 200:
-                lines = r.text.strip().split("\n")
-                if len(lines) > 1:
-                    last_line = lines[-1]
-                    parts = last_line.split(",")
-                    if len(parts) >= 2 and parts[1].strip() != ".":
-                        try:
-                            result[key] = {"rate": float(parts[1].strip())}
-                        except ValueError:
-                            pass
-        except Exception:
-            pass
+    try:
+        fred_key = st.secrets["keys"]["FRED_API_KEY"]
+        for key, series_id in fred_tips.items():
+            try:
+                r = requests.get(
+                    "https://api.stlouisfed.org/fred/series/observations",
+                    params={
+                        "series_id":        series_id,
+                        "api_key":          fred_key,
+                        "file_type":        "json",
+                        "sort_order":       "desc",
+                        "limit":            1,
+                    },
+                    timeout=10
+                )
+                if r.status_code == 200:
+                    obs = r.json().get("observations", [])
+                    if obs and obs[0]["value"] != ".":
+                        result[key] = {
+                            "rate": float(obs[0]["value"]),
+                            "date": obs[0]["date"],
+                        }
+            except Exception:
+                pass
+    except Exception:
+        pass  # si no hay key en secrets, TIPS/BEI quedan vacíos sin romper nada
+
     return result
-
-
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Ecovalores (scraping HTML estático)
 # ═══════════════════════════════════════════════════════════════════════════════
