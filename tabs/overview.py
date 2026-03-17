@@ -141,37 +141,67 @@ def _build_corporativos():
 def _build_us_rates():
     rates = get_us_rates()
     rows = ""
+
     def _rate_html(key, color="#00ff41", decimals=2):
         data = rates.get(key, {})
         rate = data.get("rate")
         if rate is not None:
             return f'<span style="color:{color};font-weight:bold">{rate:.{decimals}f}%</span>'
         return '<span style="color:#555">—</span>'
+
+    def _chg_bps_html(key):
+        """Convierte change absoluto de yield a bps con color."""
+        data = rates.get(key, {})
+        chg = data.get("change")
+        if chg is None:
+            return '<span style="color:#555">—</span>'
+        try:
+            v = float(str(chg).replace(",", ".").strip())
+            bps = round(v * 100)
+            c = "#00ff41" if v < 0 else ("#ff3b3b" if v > 0 else "#555")
+            s = "+" if bps >= 0 else ""
+            return f'<span style="color:{c};font-weight:bold">{s}{bps}bps</span>'
+        except Exception:
+            return f'<span style="color:#555">{chg}</span>'
+
+    # ── SOFR / EFFR / OBFR ──────────────────────────────────────────────────
     for label, key in [("SOFR", "SOFR"), ("EFFR", "EFFR"), ("OBFR", "OBFR")]:
         data = rates.get(key, {})
         target_from = data.get("target_from")
-        target_to = data.get("target_to")
-        target_s = f'{target_from:.2f}-{target_to:.2f}%' if target_from and target_to else ""
-        rows += f'<tr><td>{label}</td><td>{_rate_html(key)}</td><td style="color:#555;font-size:9px">{target_s}</td></tr>'
-    rows += '<tr><td colspan="3" style="border-bottom:1px solid #333;padding:1px"></td></tr>'
-    for label, key in [("UST 1M","UST_1M"), ("UST 3M","UST_3M"), ("UST 6M","UST_6M"),
-                       ("UST 1Y","UST_1Y"), ("UST 2Y","UST_2Y"), ("UST 5Y","UST_5Y"),
-                       ("UST 10Y","UST_10Y"), ("UST 30Y","UST_30Y")]:
-        rows += f'<tr><td>{label}</td><td>{_rate_html(key, "#ffcc00")}</td><td></td></tr>'
+        target_to   = data.get("target_to")
+        target_s    = f'{target_from:.2f}-{target_to:.2f}%' if target_from and target_to else ""
+        rows += f'<tr><td>{label}</td><td>{_rate_html(key)}</td><td></td><td style="color:#555;font-size:9px">{target_s}</td></tr>'
+
+    rows += '<tr><td colspan="4" style="border-bottom:1px solid #333;padding:1px"></td></tr>'
+
+    # ── Treasury yields ──────────────────────────────────────────────────────
+    for label, key in [
+        ("UST 1M",  "UST_1M"),  ("UST 3M",  "UST_3M"),
+        ("UST 6M",  "UST_6M"),  ("UST 1Y",  "UST_1Y"),
+        ("UST 2Y",  "UST_2Y"),  ("UST 5Y",  "UST_5Y"),
+        ("UST 10Y", "UST_10Y"), ("UST 30Y", "UST_30Y"),
+    ]:
+        rows += f'<tr><td>{label}</td><td>{_rate_html(key, "#ffcc00")}</td><td>{_chg_bps_html(key)}</td><td></td></tr>'
+
+    # ── 10Y-2Y Spread ────────────────────────────────────────────────────────
     ust10 = rates.get("UST_10Y", {}).get("rate")
-    ust2 = rates.get("UST_2Y", {}).get("rate")
+    ust2  = rates.get("UST_2Y",  {}).get("rate")
     if ust10 is not None and ust2 is not None:
-        spread = round((ust10 - ust2) * 100)
+        spread    = round((ust10 - ust2) * 100)
         spr_color = "#00ff41" if spread > 0 else "#ff3b3b"
-        spr_s = f'<span style="color:{spr_color};font-weight:bold">{spread:+d} bps</span>'
+        spr_s     = f'<span style="color:{spr_color};font-weight:bold">{spread:+d} bps</span>'
     else:
         spr_s = '<span style="color:#555">—</span>'
-    rows += f'<tr><td>10Y-2Y SPR</td><td>{spr_s}</td><td></td></tr>'
-    rows += '<tr><td colspan="3" style="border-bottom:1px solid #333;padding:1px"></td></tr>'
-    rows += f'<tr><td>TIPS 5Y</td><td>{_rate_html("TIPS_5Y", "#ff6600")}</td><td></td></tr>'
-    rows += f'<tr><td>TIPS 10Y</td><td>{_rate_html("TIPS_10Y", "#ff6600")}</td><td></td></tr>'
-    rows += f'<tr><td>BEI 5Y</td><td>{_rate_html("BEI_5Y", "#ff6600")}</td><td style="color:#555;font-size:9px">breakeven</td></tr>'
-    rows += f'<tr><td>BEI 10Y</td><td>{_rate_html("BEI_10Y", "#ff6600")}</td><td style="color:#555;font-size:9px">breakeven</td></tr>'
+    rows += f'<tr><td>10Y-2Y SPR</td><td>{spr_s}</td><td></td><td></td></tr>'
+
+    rows += '<tr><td colspan="4" style="border-bottom:1px solid #333;padding:1px"></td></tr>'
+
+    # ── TIPS y BEI ───────────────────────────────────────────────────────────
+    rows += f'<tr><td>TIPS 5Y</td><td>{_rate_html("TIPS_5Y",  "#ff6600")}</td><td></td><td></td></tr>'
+    rows += f'<tr><td>TIPS 10Y</td><td>{_rate_html("TIPS_10Y", "#ff6600")}</td><td></td><td></td></tr>'
+    rows += f'<tr><td>BEI 5Y</td><td>{_rate_html("BEI_5Y",   "#ff6600")}</td><td></td><td style="color:#555;font-size:9px">breakeven</td></tr>'
+    rows += f'<tr><td>BEI 10Y</td><td>{_rate_html("BEI_10Y",  "#ff6600")}</td><td></td><td style="color:#555;font-size:9px">breakeven</td></tr>'
+
     return rows
 
 
@@ -340,7 +370,7 @@ def render():
 
     p4 = _panel_html("BONOS SOBERANOS", ["BONO","PRECIO","Δ DIA","YIELD","DUR"], r_bon, PH)
     p5 = _panel_html("CORPORATIVOS", ["BONO","PRECIO","Δ DIA","YIELD","DUR"], r_corp, PH)
-    p6 = _panel_html("US RATES · SOFR · TREASURY", ["RATE","VALOR","TARGET"], r_usr, PH)
+    p6 = _panel_html("US RATES · SOFR · TREASURY", ["RATE", "VALOR", "CHG", "TARGET"], r_usr, PH)
 
     p7 = _panel_html("ACCIONES ARG", ["TICKER","MKT","PRECIO","% DIA"], r_acc, PH)
     p8 = _panel_html("ADRs ARGENTINOS", ["ADR","MKT","PRECIO","% DIA"], r_adr, PH)
