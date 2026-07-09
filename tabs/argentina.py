@@ -174,22 +174,34 @@ def _fetch_arg_equity():
                                 trend_ratio    = float(recent_5.median()) / base_avg
                                 trend_base_avg = base_avg
 
-                # 52 semanas: sobre toda la serie disponible (hasta ~1 año)
+                # 52 semanas: ¿esta semana (últimas 5 ruedas) rompió el máximo/mínimo de
+                # todo lo anterior? Más útil que exigir que sea justo HOY el extremo —
+                # una acción puede haber hecho el pico el lunes y hoy, jueves, estar
+                # apenas por debajo, y sigue siendo relevante que rompió esta semana.
                 high_52w      = None
                 low_52w       = None
                 is_new_high   = False
                 is_new_low    = False
                 pct_from_high = None
                 pct_from_low  = None
-                if price is not None and len(closes) >= 5:
-                    high_52w = float(closes.max())
-                    low_52w  = float(closes.min())
-                    if high_52w > 0:
-                        pct_from_high = (price / high_52w - 1) * 100
-                        is_new_high   = price >= high_52w * 0.999  # tolerancia por redondeo
-                    if low_52w > 0:
-                        pct_from_low = (price / low_52w - 1) * 100
-                        is_new_low   = price <= low_52w * 1.001
+                if price is not None and len(closes) >= 10:
+                    week_closes  = closes.tail(5)
+                    prior_closes = closes.iloc[:-5]
+                    if len(prior_closes) >= 5:
+                        prior_high = float(prior_closes.max())
+                        prior_low  = float(prior_closes.min())
+                        week_high  = float(week_closes.max())
+                        week_low   = float(week_closes.min())
+
+                        high_52w = max(prior_high, week_high)
+                        low_52w  = min(prior_low, week_low)
+
+                        if prior_high > 0:
+                            is_new_high   = week_high >= prior_high * 0.999
+                            pct_from_high = (price / prior_high - 1) * 100
+                        if prior_low > 0:
+                            is_new_low    = week_low <= prior_low * 1.001
+                            pct_from_low  = (price / prior_low - 1) * 100
 
                 # YTD: precio contra el primer cierre disponible del año calendario en curso
                 ytd_return = None
@@ -201,7 +213,10 @@ def _fetch_arg_equity():
                         if start_price > 0:
                             ytd_return = (price / start_price - 1) * 100
 
-                # Retornos por ventana fija (en ruedas hábiles), para el selector de período
+                # Retornos por ventana fija (en ruedas hábiles), para el selector de período.
+                # Para 12M no exigimos un número exacto de ruedas (yfinance con period="1y"
+                # no siempre devuelve el mismo conteo por feriados/días sin operar) — usamos
+                # el primer dato disponible de la ventana de ~1 año como base.
                 def _ret_lookback(n):
                     if price is not None and len(closes) > n:
                         base = float(closes.iloc[-1 - n])
@@ -209,12 +224,18 @@ def _fetch_arg_equity():
                             return (price / base - 1) * 100
                     return None
 
+                ret_12m = None
+                if price is not None and len(closes) >= 180:  # ~9 meses mínimo para llamarlo "12M"
+                    base = float(closes.iloc[0])
+                    if base > 0:
+                        ret_12m = (price / base - 1) * 100
+
                 returns_by_period = {
                     "1S":  _ret_lookback(5),
                     "1M":  _ret_lookback(21),
                     "3M":  _ret_lookback(63),
                     "YTD": ytd_return,
-                    "12M": _ret_lookback(250),
+                    "12M": ret_12m,
                 }
 
                 result[ticker] = {
@@ -555,7 +576,7 @@ def _radar_table(title, rows, value_label, min_height=460, value_fmt=_fmt_ratio_
         v_s, v_color, v_bold = value_fmt(value)
         weight = "bold" if v_bold else "normal"
         trs += (
-            f'<tr><td>{t}</td><td style="color:#666;font-size:11px">{sector}</td>'
+            f'<tr><td>{t}</td><td style="color:#999;font-size:11px">{sector}</td>'
             f'<td style="color:#ffcc00">{p_s}</td><td>{_pct_html(chg)}</td>'
             f'<td style="color:{v_color};font-weight:{weight}">{v_s}</td></tr>'
         )
@@ -586,7 +607,7 @@ def _radar_table_simple(title, rows, min_height=200):
     for t, sector, price, chg, _value in rows:
         p_s = _price_fmt(price) if price else "—"
         trs += (
-            f'<tr><td>{t}</td><td style="color:#666;font-size:11px">{sector}</td>'
+            f'<tr><td>{t}</td><td style="color:#999;font-size:11px">{sector}</td>'
             f'<td style="color:#ffcc00">{p_s}</td><td>{_pct_html(chg)}</td></tr>'
         )
     return f'''<div style="border:1px solid #333;background:#000;min-height:{min_height}px;display:flex;flex-direction:column">
@@ -731,17 +752,20 @@ def _render_radar(quotes):
 
     # ── EXTREMOS DE PRECIO — 52 SEMANAS ──
     _radar_section("EXTREMOS DE PRECIO — 52 SEMANAS")
-    c7, c8 = st.columns(2)
-    with c7:
-        st.markdown(_radar_table(
-            "NUEVOS MÁXIMOS 52 SEM.", new_highs[:15], "VS MAX",
-            min_height=_calc_table_height(len(new_highs), max_rows=15), value_fmt=_fmt_pct_signed,
-        ), unsafe_allow_html=True)
-    with c8:
-        st.markdown(_radar_table(
-            "NUEVOS MÍNIMOS 52 SEM.", new_lows[:15], "VS MIN",
-            min_height=_calc_table_height(len(new_lows), max_rows=15), value_fmt=_fmt_pct_signed,
-        ), unsafe_allow_html=True)
+    st.markdown(
+        '<div style="color:#555;font-size:10px;margin-bottom:6px">'
+        '¿Rompió esta semana (últimas 5 ruedas) el máximo/mínimo de todo lo anterior?</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(_radar_table(
+        "NUEVOS MÁXIMOS 52 SEM.", new_highs[:15], "VS MAX PREVIO",
+        min_height=_calc_table_height(len(new_highs), max_rows=15), value_fmt=_fmt_pct_signed,
+    ), unsafe_allow_html=True)
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+    st.markdown(_radar_table(
+        "NUEVOS MÍNIMOS 52 SEM.", new_lows[:15], "VS MIN PREVIO",
+        min_height=_calc_table_height(len(new_lows), max_rows=15), value_fmt=_fmt_pct_signed,
+    ), unsafe_allow_html=True)
 
 
 def render():
