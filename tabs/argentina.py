@@ -141,6 +141,7 @@ def _fetch_arg_equity():
 
                 avg_monto_21 = None
                 monto_ratio  = None
+                trend_ratio  = None
                 if len(monto_series) >= 3:
                     # Todas las ruedas previas a hoy, últimas 21 disponibles
                     hist = monto_series.iloc[:-1].tail(21)
@@ -150,6 +151,16 @@ def _fetch_arg_equity():
                             avg_monto_21 = avg_val
                             monto_ratio  = monto / avg_val if monto else 0.0
 
+                    # Tendencia: últimas 5 ruedas (incl. hoy) vs las 16 previas a esas 5
+                    window21 = monto_series.tail(21)
+                    if len(window21) >= 10:  # con al menos 10 ruedas ya es utilizable
+                        recent_5 = window21.tail(5)
+                        base_n   = window21.iloc[:-5]
+                        if len(base_n) >= 3:
+                            base_avg = float(base_n.mean())
+                            if base_avg > 0:
+                                trend_ratio = float(recent_5.mean()) / base_avg
+
                 result[ticker] = {
                     "price":        price,
                     "change_pct":   round(chg, 2),
@@ -157,18 +168,19 @@ def _fetch_arg_equity():
                     "monto":        round(monto),
                     "avg_monto_21": round(avg_monto_21) if avg_monto_21 else None,
                     "monto_ratio":  round(monto_ratio, 2) if monto_ratio is not None else None,
+                    "trend_ratio":  round(trend_ratio, 2) if trend_ratio is not None else None,
                 }
             except Exception:
                 result[ticker] = {
                     "price": None, "change_pct": 0, "volume": 0, "monto": 0,
-                    "avg_monto_21": None, "monto_ratio": None,
+                    "avg_monto_21": None, "monto_ratio": None, "trend_ratio": None,
                 }
 
     except Exception:
         for t in ALL_TICKERS:
             result[t] = {
                 "price": None, "change_pct": 0, "volume": 0, "monto": 0,
-                "avg_monto_21": None, "monto_ratio": None,
+                "avg_monto_21": None, "monto_ratio": None, "trend_ratio": None,
             }
 
     return result
@@ -454,8 +466,74 @@ def _market_kpi_html(quotes):
     )
 
 
+def _ticker_sector_map():
+    m = {}
+    for sector_name, info in SECTORS.items():
+        for t in info["tickers"]:
+            m[t] = sector_name
+    return m
+
+
+def _radar_table(title, rows, ratio_label):
+    if not rows:
+        return f'''<div style="border:1px solid #333;background:#000;padding:10px">
+  <div style="color:#ff6600;font-size:11px;font-weight:bold;letter-spacing:2px;text-transform:uppercase;margin-bottom:6px">{title}</div>
+  <div style="color:#555;font-size:12px">Sin señales por encima del umbral hoy.</div>
+</div>'''
+    trs = ""
+    for t, sector, price, chg, ratio in rows:
+        p_s = _price_fmt(price) if price else "—"
+        trs += (
+            f'<tr><td>{t}</td><td style="color:#666;font-size:11px">{sector}</td>'
+            f'<td style="color:#ffcc00">{p_s}</td><td>{_pct_html(chg)}</td>'
+            f'<td style="color:#00ff41;font-weight:bold">{ratio:.2f}x</td></tr>'
+        )
+    return f'''<div style="border:1px solid #333;background:#000">
+  <div style="background:#111;color:#ff6600;font-size:11px;font-weight:bold;letter-spacing:2px;text-transform:uppercase;padding:4px 8px;border-bottom:1px solid #ff6600">{title}</div>
+  <table class="t" style="border-collapse:collapse;width:100%">
+    <thead><tr><th>TICKER</th><th>SECTOR</th><th>PRECIO</th><th>% DIA</th><th>{ratio_label}</th></tr></thead>
+    <tbody>{trs}</tbody>
+  </table>
+</div>'''
+
+
+def _render_radar(quotes):
+    sector_map = _ticker_sector_map()
+
+    spikes = []
+    trends = []
+    for t in ALL_TICKERS:
+        q = quotes.get(t, {})
+        price = q.get("price")
+        chg   = q.get("change_pct", 0)
+        mr    = q.get("monto_ratio")
+        tr    = q.get("trend_ratio")
+        sector = sector_map.get(t, "—")
+
+        if mr is not None and mr >= 1.5:
+            spikes.append((t, sector, price, chg, mr))
+        if tr is not None and tr >= 1.15:
+            trends.append((t, sector, price, chg, tr))
+
+    spikes.sort(key=lambda x: x[4], reverse=True)
+    trends.sort(key=lambda x: x[4], reverse=True)
+
+    st.markdown(
+        '<div style="color:#666;font-size:11px;margin-bottom:8px">'
+        'VOLUMEN INUSUAL = monto de hoy vs. su propio promedio de 21 ruedas &nbsp;·&nbsp; '
+        'ACUMULACIÓN DE VOLUMEN = promedio de las últimas 5 ruedas vs. las 16 previas'
+        '</div>', unsafe_allow_html=True
+    )
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown(_radar_table("VOLUMEN INUSUAL", spikes[:15], "HOY/PROM"), unsafe_allow_html=True)
+    with col2:
+        st.markdown(_radar_table("ACUMULACIÓN DE VOLUMEN", trends[:15], "5D/16D"), unsafe_allow_html=True)
+
+
 def render():
-    subtabs = st.tabs(["SECTORES", "HEATMAP"])
+    subtabs = st.tabs(["SECTORES", "HEATMAP", "RADAR"])
 
     with st.spinner(""):
         quotes = _fetch_arg_equity()
@@ -493,3 +571,6 @@ def render():
             st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
         else:
             st.markdown('<p style="color:#555;font-size:10px">Sin datos para heatmap</p>', unsafe_allow_html=True)
+
+    with subtabs[2]:
+        _render_radar(quotes)
