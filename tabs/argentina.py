@@ -87,13 +87,15 @@ def _prev_close_fallback(sym: str) -> float | None:
         return None
 
 
-@st.cache_data(ttl=60, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def _fetch_arg_equity():
     """Fetch all Argentine equity data via yfinance .BA tickers.
 
-    Baja ~60 días calendario (≈40 ruedas) para poder calcular el monto
-    operado promedio de las últimas 21 ruedas por ticker, y compararlo
-    contra el monto de hoy (monto_ratio).
+    Baja ~1 año de historial para poder calcular, además del monto operado
+    promedio de 21 ruedas: máximos/mínimos de 52 semanas y retorno YTD.
+    TTL subido a 300s (5 min) porque bajar 1 año x 70 tickers cada 60s
+    es innecesariamente pesado — ninguno de estos indicadores necesita
+    actualizarse minuto a minuto.
     """
     import yfinance as yf
     import pandas as pd
@@ -102,9 +104,17 @@ def _fetch_arg_equity():
     n = len(yf_symbols)
     result = {}
 
+    empty_record = {
+        "price": None, "change_pct": 0, "volume": 0, "monto": 0,
+        "avg_monto_21": None, "monto_ratio": None, "trend_ratio": None,
+        "trend_base_avg": None, "high_52w": None, "low_52w": None,
+        "is_new_high": False, "is_new_low": False,
+        "pct_from_high": None, "pct_from_low": None, "ytd_return": None,
+    }
+
     try:
         raw = yf.download(
-            yf_symbols, period="60d", interval="1d",
+            yf_symbols, period="1y", interval="1d",
             auto_adjust=True, progress=False, threads=True,
         )
 
@@ -153,10 +163,8 @@ def _fetch_arg_equity():
                             monto_ratio  = monto / avg_val if monto else 0.0
 
                     # Tendencia: mediana de últimas 5 ruedas (incl. hoy) vs media de las 16 previas.
-                    # Mediana en el bloque reciente para que un solo día outlier (ya capturado
-                    # en "Volumen Inusual") no se confunda con una acumulación sostenida real.
                     window21 = monto_series.tail(21)
-                    if len(window21) >= 10:  # con al menos 10 ruedas ya es utilizable
+                    if len(window21) >= 10:
                         recent_5 = window21.tail(5)
                         base_n   = window21.iloc[:-5]
                         if len(base_n) >= 3:
@@ -164,6 +172,33 @@ def _fetch_arg_equity():
                             if base_avg > 0:
                                 trend_ratio    = float(recent_5.median()) / base_avg
                                 trend_base_avg = base_avg
+
+                # 52 semanas: sobre toda la serie disponible (hasta ~1 año)
+                high_52w      = None
+                low_52w       = None
+                is_new_high   = False
+                is_new_low    = False
+                pct_from_high = None
+                pct_from_low  = None
+                if price is not None and len(closes) >= 5:
+                    high_52w = float(closes.max())
+                    low_52w  = float(closes.min())
+                    if high_52w > 0:
+                        pct_from_high = (price / high_52w - 1) * 100
+                        is_new_high   = price >= high_52w * 0.999  # tolerancia por redondeo
+                    if low_52w > 0:
+                        pct_from_low = (price / low_52w - 1) * 100
+                        is_new_low   = price <= low_52w * 1.001
+
+                # YTD: precio contra el primer cierre disponible del año calendario en curso
+                ytd_return = None
+                if price is not None and len(closes) >= 2:
+                    last_year = closes.index[-1].year
+                    ytd_series = closes[closes.index.year == last_year]
+                    if len(ytd_series) >= 2:
+                        start_price = float(ytd_series.iloc[0])
+                        if start_price > 0:
+                            ytd_return = (price / start_price - 1) * 100
 
                 result[ticker] = {
                     "price":          price,
@@ -174,21 +209,20 @@ def _fetch_arg_equity():
                     "monto_ratio":    round(monto_ratio, 2) if monto_ratio is not None else None,
                     "trend_ratio":    round(trend_ratio, 2) if trend_ratio is not None else None,
                     "trend_base_avg": round(trend_base_avg) if trend_base_avg else None,
+                    "high_52w":       high_52w,
+                    "low_52w":        low_52w,
+                    "is_new_high":    is_new_high,
+                    "is_new_low":     is_new_low,
+                    "pct_from_high":  round(pct_from_high, 2) if pct_from_high is not None else None,
+                    "pct_from_low":   round(pct_from_low, 2) if pct_from_low is not None else None,
+                    "ytd_return":     round(ytd_return, 2) if ytd_return is not None else None,
                 }
             except Exception:
-                result[ticker] = {
-                    "price": None, "change_pct": 0, "volume": 0, "monto": 0,
-                    "avg_monto_21": None, "monto_ratio": None, "trend_ratio": None,
-                    "trend_base_avg": None,
-                }
+                result[ticker] = dict(empty_record)
 
     except Exception:
         for t in ALL_TICKERS:
-            result[t] = {
-                "price": None, "change_pct": 0, "volume": 0, "monto": 0,
-                "avg_monto_21": None, "monto_ratio": None, "trend_ratio": None,
-                "trend_base_avg": None,
-            }
+            result[t] = dict(empty_record)
 
     return result
 
@@ -481,69 +515,164 @@ def _ticker_sector_map():
     return m
 
 
-def _radar_table(title, rows, ratio_label, min_height=460):
+def _fmt_ratio_x(v):
+    return f"{v:.2f}x", "#00ff41", True
+
+
+def _fmt_pct_signed(v):
+    color = "#00ff41" if v >= 0 else "#ff3b3b"
+    sign = "+" if v >= 0 else ""
+    return f"{sign}{v:.2f}%", color, True
+
+
+def _radar_table(title, rows, value_label, min_height=460, value_fmt=_fmt_ratio_x):
     if not rows:
         return f'''<div style="border:1px solid #333;background:#000;padding:10px;min-height:{min_height}px">
   <div style="color:#ff6600;font-size:11px;font-weight:bold;letter-spacing:2px;text-transform:uppercase;margin-bottom:6px">{title}</div>
   <div style="color:#555;font-size:12px">Sin señales por encima del umbral hoy.</div>
 </div>'''
     trs = ""
-    for t, sector, price, chg, ratio in rows:
+    for t, sector, price, chg, value in rows:
         p_s = _price_fmt(price) if price else "—"
+        v_s, v_color, v_bold = value_fmt(value)
+        weight = "bold" if v_bold else "normal"
         trs += (
             f'<tr><td>{t}</td><td style="color:#666;font-size:11px">{sector}</td>'
             f'<td style="color:#ffcc00">{p_s}</td><td>{_pct_html(chg)}</td>'
-            f'<td style="color:#00ff41;font-weight:bold">{ratio:.2f}x</td></tr>'
+            f'<td style="color:{v_color};font-weight:{weight}">{v_s}</td></tr>'
         )
     return f'''<div style="border:1px solid #333;background:#000;min-height:{min_height}px;display:flex;flex-direction:column">
   <div style="background:#111;color:#ff6600;font-size:11px;font-weight:bold;letter-spacing:2px;text-transform:uppercase;padding:4px 8px;border-bottom:1px solid #ff6600">{title}</div>
   <table class="t" style="border-collapse:collapse;width:100%">
-    <thead><tr><th>TICKER</th><th>SECTOR</th><th>PRECIO</th><th>% DIA</th><th>{ratio_label}</th></tr></thead>
+    <thead><tr><th>TICKER</th><th>SECTOR</th><th>PRECIO</th><th>% DIA</th><th>{value_label}</th></tr></thead>
     <tbody>{trs}</tbody>
   </table>
 </div>'''
 
 
+def _radar_section(title):
+    st.markdown(
+        f'<div style="color:#ff6600;font-size:12px;font-weight:bold;letter-spacing:2px;'
+        f'text-transform:uppercase;border-bottom:1px solid #333;padding-bottom:4px;'
+        f'margin:18px 0 8px 0">{title}</div>',
+        unsafe_allow_html=True,
+    )
+
+
 def _render_radar(quotes):
     sector_map = _ticker_sector_map()
 
-    # Piso de liquidez: por debajo de esto, el ratio no es confiable (dividir por casi-cero
-    # en papeles ilíquidos da ratios gigantes que no significan nada). Ajustable.
+    # Piso de liquidez: por debajo de esto, cualquier ratio o % es más ruido de
+    # papel ilíquido que señal real. Se aplica a todas las categorías del radar.
     MIN_MONTO_FLOOR = 3_000_000
 
-    spikes = []
-    trends = []
+    spikes, trends = [], []
+    new_highs, new_lows = [], []
+    ytd_pool, mover_pool = [], []
+
     for t in ALL_TICKERS:
         q = quotes.get(t, {})
-        price = q.get("price")
-        chg   = q.get("change_pct", 0)
-        mr    = q.get("monto_ratio")
-        tr    = q.get("trend_ratio")
-        avg21 = q.get("avg_monto_21")
-        base16 = q.get("trend_base_avg")
+        price  = q.get("price")
+        chg    = q.get("change_pct", 0)
+        avg21  = q.get("avg_monto_21") or 0
         sector = sector_map.get(t, "—")
 
-        if mr is not None and mr >= 1.5 and (avg21 or 0) >= MIN_MONTO_FLOOR:
+        liquid = avg21 >= MIN_MONTO_FLOOR
+        if not liquid or price is None:
+            continue
+
+        mr = q.get("monto_ratio")
+        tr = q.get("trend_ratio")
+        if mr is not None and mr >= 1.5:
             spikes.append((t, sector, price, chg, mr))
-        if tr is not None and tr >= 1.15 and (base16 or 0) >= MIN_MONTO_FLOOR:
+        if tr is not None and tr >= 1.15:
             trends.append((t, sector, price, chg, tr))
+
+        if q.get("is_new_high"):
+            new_highs.append((t, sector, price, chg, q.get("pct_from_high") or 0.0))
+        if q.get("is_new_low"):
+            new_lows.append((t, sector, price, chg, q.get("pct_from_low") or 0.0))
+
+        if q.get("ytd_return") is not None:
+            ytd_pool.append((t, sector, price, chg, q["ytd_return"]))
+
+        mover_pool.append((t, sector, price, chg, chg))
 
     spikes.sort(key=lambda x: x[4], reverse=True)
     trends.sort(key=lambda x: x[4], reverse=True)
+    new_highs.sort(key=lambda x: x[4], reverse=True)   # más cerca de 0% = más "nuevo"
+    new_lows.sort(key=lambda x: x[4])                  # más negativo = más "nuevo"
+    ytd_best  = sorted(ytd_pool, key=lambda x: x[4], reverse=True)[:5]
+    ytd_worst = sorted(ytd_pool, key=lambda x: x[4])[:5]
+    movers_up   = sorted(mover_pool, key=lambda x: x[4], reverse=True)[:5]
+    movers_down = sorted(mover_pool, key=lambda x: x[4])[:5]
 
     st.markdown(
-        '<div style="color:#666;font-size:11px;margin-bottom:8px">'
-        'VOLUMEN INUSUAL = monto de hoy vs. su propio promedio de 21 ruedas &nbsp;·&nbsp; '
-        'ACUMULACIÓN DE VOLUMEN = mediana de las últimas 5 ruedas vs. promedio de las 16 previas '
-        '(la mediana evita que un solo día outlier se confunda con tendencia real)'
-        '</div>', unsafe_allow_html=True
+        f'<div style="color:#666;font-size:11px;margin-bottom:8px">'
+        f'Todas las categorías excluyen papeles con promedio operado por debajo de '
+        f'{_vol_fmt(MIN_MONTO_FLOOR)} — evita ratios/% inflados por baja liquidez.'
+        f'</div>', unsafe_allow_html=True
     )
 
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown(_radar_table("VOLUMEN INUSUAL", spikes[:15], "HOY/PROM"), unsafe_allow_html=True)
-    with col2:
-        st.markdown(_radar_table("ACUMULACIÓN DE VOLUMEN", trends[:15], "5D/16D"), unsafe_allow_html=True)
+    _radar_section("FLUJOS DE VOLUMEN")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown(_radar_table(
+            "VOLUMEN INUSUAL", spikes[:15], "HOY/PROM", min_height=420
+        ), unsafe_allow_html=True)
+        st.markdown(
+            '<div style="color:#555;font-size:10px;margin-top:4px">'
+            'Monto de hoy vs. su propio promedio de 21 ruedas</div>',
+            unsafe_allow_html=True,
+        )
+    with c2:
+        st.markdown(_radar_table(
+            "ACUMULACIÓN DE VOLUMEN", trends[:15], "5D/16D", min_height=420
+        ), unsafe_allow_html=True)
+        st.markdown(
+            '<div style="color:#555;font-size:10px;margin-top:4px">'
+            'Mediana de últimas 5 ruedas vs. promedio de las 16 previas</div>',
+            unsafe_allow_html=True,
+        )
+
+    _radar_section("EXTREMOS DE PRECIO — 52 SEMANAS")
+    c3, c4 = st.columns(2)
+    with c3:
+        st.markdown(_radar_table(
+            "NUEVOS MÁXIMOS 52 SEM.", new_highs[:15], "VS MAX",
+            min_height=340, value_fmt=_fmt_pct_signed,
+        ), unsafe_allow_html=True)
+    with c4:
+        st.markdown(_radar_table(
+            "NUEVOS MÍNIMOS 52 SEM.", new_lows[:15], "VS MIN",
+            min_height=340, value_fmt=_fmt_pct_signed,
+        ), unsafe_allow_html=True)
+
+    _radar_section("PERFORMANCE YTD")
+    c5, c6 = st.columns(2)
+    with c5:
+        st.markdown(_radar_table(
+            "TOP 5 MEJORES YTD", ytd_best, "YTD",
+            min_height=230, value_fmt=_fmt_pct_signed,
+        ), unsafe_allow_html=True)
+    with c6:
+        st.markdown(_radar_table(
+            "TOP 5 PEORES YTD", ytd_worst, "YTD",
+            min_height=230, value_fmt=_fmt_pct_signed,
+        ), unsafe_allow_html=True)
+
+    _radar_section("MOVERS DEL DÍA")
+    c7, c8 = st.columns(2)
+    with c7:
+        st.markdown(_radar_table(
+            "TOP 5 SUBEN HOY", movers_up, "% DIA",
+            min_height=230, value_fmt=_fmt_pct_signed,
+        ), unsafe_allow_html=True)
+    with c8:
+        st.markdown(_radar_table(
+            "TOP 5 BAJAN HOY", movers_down, "% DIA",
+            min_height=230, value_fmt=_fmt_pct_signed,
+        ), unsafe_allow_html=True)
 
 
 def render():
