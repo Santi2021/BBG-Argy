@@ -109,7 +109,8 @@ def _fetch_arg_equity():
         "avg_monto_21": None, "monto_ratio": None, "trend_ratio": None,
         "trend_base_avg": None, "high_52w": None, "low_52w": None,
         "is_new_high": False, "is_new_low": False,
-        "pct_from_high": None, "pct_from_low": None, "ytd_return": None,
+        "pct_from_high": None, "pct_from_low": None,
+        "returns": {"1S": None, "1M": None, "3M": None, "YTD": None, "12M": None},
     }
 
     try:
@@ -200,6 +201,22 @@ def _fetch_arg_equity():
                         if start_price > 0:
                             ytd_return = (price / start_price - 1) * 100
 
+                # Retornos por ventana fija (en ruedas hábiles), para el selector de período
+                def _ret_lookback(n):
+                    if price is not None and len(closes) > n:
+                        base = float(closes.iloc[-1 - n])
+                        if base > 0:
+                            return (price / base - 1) * 100
+                    return None
+
+                returns_by_period = {
+                    "1S":  _ret_lookback(5),
+                    "1M":  _ret_lookback(21),
+                    "3M":  _ret_lookback(63),
+                    "YTD": ytd_return,
+                    "12M": _ret_lookback(250),
+                }
+
                 result[ticker] = {
                     "price":          price,
                     "change_pct":     round(chg, 2),
@@ -215,7 +232,8 @@ def _fetch_arg_equity():
                     "is_new_low":     is_new_low,
                     "pct_from_high":  round(pct_from_high, 2) if pct_from_high is not None else None,
                     "pct_from_low":   round(pct_from_low, 2) if pct_from_low is not None else None,
-                    "ytd_return":     round(ytd_return, 2) if ytd_return is not None else None,
+                    "returns":        {k: (round(v, 2) if v is not None else None)
+                                        for k, v in returns_by_period.items()},
                 }
             except Exception:
                 result[ticker] = dict(empty_record)
@@ -598,7 +616,7 @@ def _render_radar(quotes):
 
     spikes, trends = [], []
     new_highs, new_lows = [], []
-    ytd_pool, mover_pool = [], []
+    mover_pool = []
 
     for t in ALL_TICKERS:
         q = quotes.get(t, {})
@@ -623,17 +641,12 @@ def _render_radar(quotes):
         if q.get("is_new_low"):
             new_lows.append((t, sector, price, chg, q.get("pct_from_low") or 0.0))
 
-        if q.get("ytd_return") is not None:
-            ytd_pool.append((t, sector, price, chg, q["ytd_return"]))
-
         mover_pool.append((t, sector, price, chg, chg))
 
     spikes.sort(key=lambda x: x[4], reverse=True)
     trends.sort(key=lambda x: x[4], reverse=True)
     new_highs.sort(key=lambda x: x[4], reverse=True)   # más cerca de 0% = más "nuevo"
     new_lows.sort(key=lambda x: x[4])                  # más negativo = más "nuevo"
-    ytd_best  = sorted(ytd_pool, key=lambda x: x[4], reverse=True)[:5]
-    ytd_worst = sorted(ytd_pool, key=lambda x: x[4])[:5]
     movers_up   = sorted(mover_pool, key=lambda x: x[4], reverse=True)[:5]
     movers_down = sorted(mover_pool, key=lambda x: x[4])[:5]
 
@@ -644,31 +657,71 @@ def _render_radar(quotes):
         f'</div>', unsafe_allow_html=True
     )
 
+    # ── MOVERS DEL DÍA ──
     _radar_section("MOVERS DEL DÍA")
-    h_movers = max(_calc_table_height(len(movers_up), max_rows=5),
-                   _calc_table_height(len(movers_down), max_rows=5))
     c1, c2 = st.columns(2)
     with c1:
-        st.markdown(_radar_table_simple("TOP 5 SUBEN HOY", movers_up, min_height=h_movers), unsafe_allow_html=True)
+        st.markdown(_radar_table_simple(
+            "TOP 5 SUBEN HOY", movers_up,
+            min_height=_calc_table_height(len(movers_up), max_rows=5),
+        ), unsafe_allow_html=True)
     with c2:
-        st.markdown(_radar_table_simple("TOP 5 BAJAN HOY", movers_down, min_height=h_movers), unsafe_allow_html=True)
+        st.markdown(_radar_table_simple(
+            "TOP 5 BAJAN HOY", movers_down,
+            min_height=_calc_table_height(len(movers_down), max_rows=5),
+        ), unsafe_allow_html=True)
 
-    _radar_section("FLUJOS DE VOLUMEN")
-    h_flujos = max(_calc_table_height(len(spikes), max_rows=15),
-                   _calc_table_height(len(trends), max_rows=15))
+    # ── PERFORMANCE (selector de período) ──
+    _radar_section("PERFORMANCE")
+    period_labels = {"1S": "1 Semana", "1M": "1 Mes", "3M": "3 Meses", "YTD": "YTD", "12M": "12 Meses"}
+    period = st.radio(
+        "Período", list(period_labels.keys()), index=3, horizontal=True,
+        format_func=lambda k: period_labels[k], key="radar_period", label_visibility="collapsed",
+    )
+
+    perf_pool = []
+    for t in ALL_TICKERS:
+        q = quotes.get(t, {})
+        price = q.get("price")
+        chg   = q.get("change_pct", 0)
+        avg21 = q.get("avg_monto_21") or 0
+        ret   = q.get("returns", {}).get(period)
+        if price is None or avg21 < MIN_MONTO_FLOOR or ret is None:
+            continue
+        perf_pool.append((t, sector_map.get(t, "—"), price, chg, ret))
+
+    perf_best  = sorted(perf_pool, key=lambda x: x[4], reverse=True)[:5]
+    perf_worst = sorted(perf_pool, key=lambda x: x[4])[:5]
+
     c3, c4 = st.columns(2)
     with c3:
         st.markdown(_radar_table(
-            "VOLUMEN INUSUAL", spikes[:15], "HOY/PROM", min_height=h_flujos
+            f"TOP 5 MEJORES · {period_labels[period]}", perf_best, period,
+            min_height=_calc_table_height(len(perf_best), max_rows=5), value_fmt=_fmt_pct_signed,
+        ), unsafe_allow_html=True)
+    with c4:
+        st.markdown(_radar_table(
+            f"TOP 5 PEORES · {period_labels[period]}", perf_worst, period,
+            min_height=_calc_table_height(len(perf_worst), max_rows=5), value_fmt=_fmt_pct_signed,
+        ), unsafe_allow_html=True)
+
+    # ── FLUJOS DE VOLUMEN ──
+    _radar_section("FLUJOS DE VOLUMEN")
+    c5, c6 = st.columns(2)
+    with c5:
+        st.markdown(_radar_table(
+            "VOLUMEN INUSUAL", spikes[:15], "HOY/PROM",
+            min_height=_calc_table_height(len(spikes), max_rows=15),
         ), unsafe_allow_html=True)
         st.markdown(
             '<div style="color:#555;font-size:10px;margin-top:4px">'
             'Monto de hoy vs. su propio promedio de 21 ruedas</div>',
             unsafe_allow_html=True,
         )
-    with c4:
+    with c6:
         st.markdown(_radar_table(
-            "ACUMULACIÓN DE VOLUMEN", trends[:15], "5D/16D", min_height=h_flujos
+            "ACUMULACIÓN DE VOLUMEN", trends[:15], "5D/16D",
+            min_height=_calc_table_height(len(trends), max_rows=15),
         ), unsafe_allow_html=True)
         st.markdown(
             '<div style="color:#555;font-size:10px;margin-top:4px">'
@@ -676,34 +729,18 @@ def _render_radar(quotes):
             unsafe_allow_html=True,
         )
 
+    # ── EXTREMOS DE PRECIO — 52 SEMANAS ──
     _radar_section("EXTREMOS DE PRECIO — 52 SEMANAS")
-    h_52w = max(_calc_table_height(len(new_highs), max_rows=15),
-                _calc_table_height(len(new_lows), max_rows=15))
-    c5, c6 = st.columns(2)
-    with c5:
-        st.markdown(_radar_table(
-            "NUEVOS MÁXIMOS 52 SEM.", new_highs[:15], "VS MAX",
-            min_height=h_52w, value_fmt=_fmt_pct_signed,
-        ), unsafe_allow_html=True)
-    with c6:
-        st.markdown(_radar_table(
-            "NUEVOS MÍNIMOS 52 SEM.", new_lows[:15], "VS MIN",
-            min_height=h_52w, value_fmt=_fmt_pct_signed,
-        ), unsafe_allow_html=True)
-
-    _radar_section("PERFORMANCE YTD")
-    h_ytd = max(_calc_table_height(len(ytd_best), max_rows=5),
-                _calc_table_height(len(ytd_worst), max_rows=5))
     c7, c8 = st.columns(2)
     with c7:
         st.markdown(_radar_table(
-            "TOP 5 MEJORES YTD", ytd_best, "YTD",
-            min_height=h_ytd, value_fmt=_fmt_pct_signed,
+            "NUEVOS MÁXIMOS 52 SEM.", new_highs[:15], "VS MAX",
+            min_height=_calc_table_height(len(new_highs), max_rows=15), value_fmt=_fmt_pct_signed,
         ), unsafe_allow_html=True)
     with c8:
         st.markdown(_radar_table(
-            "TOP 5 PEORES YTD", ytd_worst, "YTD",
-            min_height=h_ytd, value_fmt=_fmt_pct_signed,
+            "NUEVOS MÍNIMOS 52 SEM.", new_lows[:15], "VS MIN",
+            min_height=_calc_table_height(len(new_lows), max_rows=15), value_fmt=_fmt_pct_signed,
         ), unsafe_allow_html=True)
 
 
