@@ -772,13 +772,15 @@ def _render_radar(quotes):
         '¿Rompió esta semana (últimas 5 ruedas) el máximo/mínimo de todo lo anterior?</div>',
         unsafe_allow_html=True,
     )
-    st.markdown(_radar_table(
-        "NUEVOS MÁXIMOS 52 SEM.", new_highs[:8], "VS MAX PREVIO", value_fmt=_fmt_pct_signed,
-    ), unsafe_allow_html=True)
-    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-    st.markdown(_radar_table(
-        "NUEVOS MÍNIMOS 52 SEM.", new_lows[:8], "VS MIN PREVIO", value_fmt=_fmt_pct_signed,
-    ), unsafe_allow_html=True)
+    c7, c8 = st.columns(2)
+    with c7:
+        st.markdown(_radar_table(
+            "NUEVOS MÁXIMOS 52 SEM.", new_highs[:8], "VS MAX PREVIO", value_fmt=_fmt_pct_signed,
+        ), unsafe_allow_html=True)
+    with c8:
+        st.markdown(_radar_table(
+            "NUEVOS MÍNIMOS 52 SEM.", new_lows[:8], "VS MIN PREVIO", value_fmt=_fmt_pct_signed,
+        ), unsafe_allow_html=True)
 
 
 def render():
