@@ -170,7 +170,7 @@ div[data-testid="stAppViewBlockContainer"] { padding-top: 0 !important; }
       font-size:9px; text-align:center; letter-spacing:1px; margin-top:8px; }
 
 /* ── Misc ── */
-[data-testid="stHorizontalBlock"] { gap: 4px !important; }
+[data-testid="stHorizontalBlock"] { gap: 4px !important; align-items: flex-start !important; }
 [data-testid="column"] { padding: 0 !important; }
 [data-testid="stVerticalBlock"] { gap: 0.05rem !important; }
 
@@ -197,15 +197,30 @@ div[data-testid="stAppViewBlockContainer"] { padding-top: 0 !important; }
 pre { background:#050505 !important; border:1px solid #222 !important; font-size:9px !important; }
 [data-testid="stTabBar"] [data-baseweb="tab-list"] { background: transparent !important; }
 
-/* ── Radio button (selector de período) — estilo terminal ── */
-[data-testid="stRadio"] label {
+/* ── Selector de período (Radar, tab Argentina) — solo estos botones ── */
+.st-key-radar_period_buttons [data-testid="baseButton-secondary"] {
+    background: #000 !important;
+    border: 1px solid #333 !important;
+    color: #888 !important;
     font-family: 'Courier New', monospace !important;
-    color: #ccc !important;
-    font-size: 12px !important;
+    font-size: 11px !important;
     letter-spacing: 1px;
+    border-radius: 0 !important;
 }
-[data-testid="stRadio"] input[type="radio"] { accent-color: #ff6600; }
-[data-testid="stRadio"] > div[role="radiogroup"] { gap: 18px !important; }
+.st-key-radar_period_buttons [data-testid="baseButton-secondary"]:hover {
+    border-color: #ff6600 !important;
+    color: #fff !important;
+}
+.st-key-radar_period_buttons [data-testid="baseButton-primary"] {
+    background: #1a0d00 !important;
+    border: 1px solid #ff6600 !important;
+    color: #ff6600 !important;
+    font-family: 'Courier New', monospace !important;
+    font-size: 11px !important;
+    font-weight: bold;
+    letter-spacing: 1px;
+    border-radius: 0 !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
