@@ -550,6 +550,36 @@ def _radar_table(title, rows, value_label, min_height=460, value_fmt=_fmt_ratio_
 </div>'''
 
 
+def _calc_table_height(n_rows, max_rows=15, row_px=27, header_px=62, min_px=110):
+    """Alto proporcional al contenido real, con piso y techo razonables."""
+    n = max(min(n_rows, max_rows), 1)
+    return max(header_px + n * row_px, min_px)
+
+
+def _radar_table_simple(title, rows, min_height=200):
+    """Igual que _radar_table pero sin columna de valor extra (para Movers del Día,
+    donde el valor que ordena ya ES el % DIA — mostrarlo dos veces era redundante)."""
+    if not rows:
+        return f'''<div style="border:1px solid #333;background:#000;padding:10px;min-height:{min_height}px">
+  <div style="color:#ff6600;font-size:11px;font-weight:bold;letter-spacing:2px;text-transform:uppercase;margin-bottom:6px">{title}</div>
+  <div style="color:#555;font-size:12px">Sin señales por encima del umbral hoy.</div>
+</div>'''
+    trs = ""
+    for t, sector, price, chg, _value in rows:
+        p_s = _price_fmt(price) if price else "—"
+        trs += (
+            f'<tr><td>{t}</td><td style="color:#666;font-size:11px">{sector}</td>'
+            f'<td style="color:#ffcc00">{p_s}</td><td>{_pct_html(chg)}</td></tr>'
+        )
+    return f'''<div style="border:1px solid #333;background:#000;min-height:{min_height}px;display:flex;flex-direction:column">
+  <div style="background:#111;color:#ff6600;font-size:11px;font-weight:bold;letter-spacing:2px;text-transform:uppercase;padding:4px 8px;border-bottom:1px solid #ff6600">{title}</div>
+  <table class="t" style="border-collapse:collapse;width:100%">
+    <thead><tr><th>TICKER</th><th>SECTOR</th><th>PRECIO</th><th>% DIA</th></tr></thead>
+    <tbody>{trs}</tbody>
+  </table>
+</div>'''
+
+
 def _radar_section(title):
     st.markdown(
         f'<div style="color:#ff6600;font-size:12px;font-weight:bold;letter-spacing:2px;'
@@ -614,20 +644,31 @@ def _render_radar(quotes):
         f'</div>', unsafe_allow_html=True
     )
 
-    _radar_section("FLUJOS DE VOLUMEN")
+    _radar_section("MOVERS DEL DÍA")
+    h_movers = max(_calc_table_height(len(movers_up), max_rows=5),
+                   _calc_table_height(len(movers_down), max_rows=5))
     c1, c2 = st.columns(2)
     with c1:
+        st.markdown(_radar_table_simple("TOP 5 SUBEN HOY", movers_up, min_height=h_movers), unsafe_allow_html=True)
+    with c2:
+        st.markdown(_radar_table_simple("TOP 5 BAJAN HOY", movers_down, min_height=h_movers), unsafe_allow_html=True)
+
+    _radar_section("FLUJOS DE VOLUMEN")
+    h_flujos = max(_calc_table_height(len(spikes), max_rows=15),
+                   _calc_table_height(len(trends), max_rows=15))
+    c3, c4 = st.columns(2)
+    with c3:
         st.markdown(_radar_table(
-            "VOLUMEN INUSUAL", spikes[:15], "HOY/PROM", min_height=420
+            "VOLUMEN INUSUAL", spikes[:15], "HOY/PROM", min_height=h_flujos
         ), unsafe_allow_html=True)
         st.markdown(
             '<div style="color:#555;font-size:10px;margin-top:4px">'
             'Monto de hoy vs. su propio promedio de 21 ruedas</div>',
             unsafe_allow_html=True,
         )
-    with c2:
+    with c4:
         st.markdown(_radar_table(
-            "ACUMULACIÓN DE VOLUMEN", trends[:15], "5D/16D", min_height=420
+            "ACUMULACIÓN DE VOLUMEN", trends[:15], "5D/16D", min_height=h_flujos
         ), unsafe_allow_html=True)
         st.markdown(
             '<div style="color:#555;font-size:10px;margin-top:4px">'
@@ -636,42 +677,33 @@ def _render_radar(quotes):
         )
 
     _radar_section("EXTREMOS DE PRECIO — 52 SEMANAS")
-    c3, c4 = st.columns(2)
-    with c3:
-        st.markdown(_radar_table(
-            "NUEVOS MÁXIMOS 52 SEM.", new_highs[:15], "VS MAX",
-            min_height=340, value_fmt=_fmt_pct_signed,
-        ), unsafe_allow_html=True)
-    with c4:
-        st.markdown(_radar_table(
-            "NUEVOS MÍNIMOS 52 SEM.", new_lows[:15], "VS MIN",
-            min_height=340, value_fmt=_fmt_pct_signed,
-        ), unsafe_allow_html=True)
-
-    _radar_section("PERFORMANCE YTD")
+    h_52w = max(_calc_table_height(len(new_highs), max_rows=15),
+                _calc_table_height(len(new_lows), max_rows=15))
     c5, c6 = st.columns(2)
     with c5:
         st.markdown(_radar_table(
-            "TOP 5 MEJORES YTD", ytd_best, "YTD",
-            min_height=230, value_fmt=_fmt_pct_signed,
+            "NUEVOS MÁXIMOS 52 SEM.", new_highs[:15], "VS MAX",
+            min_height=h_52w, value_fmt=_fmt_pct_signed,
         ), unsafe_allow_html=True)
     with c6:
         st.markdown(_radar_table(
-            "TOP 5 PEORES YTD", ytd_worst, "YTD",
-            min_height=230, value_fmt=_fmt_pct_signed,
+            "NUEVOS MÍNIMOS 52 SEM.", new_lows[:15], "VS MIN",
+            min_height=h_52w, value_fmt=_fmt_pct_signed,
         ), unsafe_allow_html=True)
 
-    _radar_section("MOVERS DEL DÍA")
+    _radar_section("PERFORMANCE YTD")
+    h_ytd = max(_calc_table_height(len(ytd_best), max_rows=5),
+                _calc_table_height(len(ytd_worst), max_rows=5))
     c7, c8 = st.columns(2)
     with c7:
         st.markdown(_radar_table(
-            "TOP 5 SUBEN HOY", movers_up, "% DIA",
-            min_height=230, value_fmt=_fmt_pct_signed,
+            "TOP 5 MEJORES YTD", ytd_best, "YTD",
+            min_height=h_ytd, value_fmt=_fmt_pct_signed,
         ), unsafe_allow_html=True)
     with c8:
         st.markdown(_radar_table(
-            "TOP 5 BAJAN HOY", movers_down, "% DIA",
-            min_height=230, value_fmt=_fmt_pct_signed,
+            "TOP 5 PEORES YTD", ytd_worst, "YTD",
+            min_height=h_ytd, value_fmt=_fmt_pct_signed,
         ), unsafe_allow_html=True)
 
 
