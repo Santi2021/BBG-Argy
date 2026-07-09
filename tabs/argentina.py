@@ -152,7 +152,9 @@ def _fetch_arg_equity():
                             avg_monto_21 = avg_val
                             monto_ratio  = monto / avg_val if monto else 0.0
 
-                    # Tendencia: últimas 5 ruedas (incl. hoy) vs las 16 previas a esas 5
+                    # Tendencia: mediana de últimas 5 ruedas (incl. hoy) vs media de las 16 previas.
+                    # Mediana en el bloque reciente para que un solo día outlier (ya capturado
+                    # en "Volumen Inusual") no se confunda con una acumulación sostenida real.
                     window21 = monto_series.tail(21)
                     if len(window21) >= 10:  # con al menos 10 ruedas ya es utilizable
                         recent_5 = window21.tail(5)
@@ -160,7 +162,7 @@ def _fetch_arg_equity():
                         if len(base_n) >= 3:
                             base_avg = float(base_n.mean())
                             if base_avg > 0:
-                                trend_ratio    = float(recent_5.mean()) / base_avg
+                                trend_ratio    = float(recent_5.median()) / base_avg
                                 trend_base_avg = base_avg
 
                 result[ticker] = {
@@ -479,9 +481,9 @@ def _ticker_sector_map():
     return m
 
 
-def _radar_table(title, rows, ratio_label):
+def _radar_table(title, rows, ratio_label, min_height=460):
     if not rows:
-        return f'''<div style="border:1px solid #333;background:#000;padding:10px">
+        return f'''<div style="border:1px solid #333;background:#000;padding:10px;min-height:{min_height}px">
   <div style="color:#ff6600;font-size:11px;font-weight:bold;letter-spacing:2px;text-transform:uppercase;margin-bottom:6px">{title}</div>
   <div style="color:#555;font-size:12px">Sin señales por encima del umbral hoy.</div>
 </div>'''
@@ -493,7 +495,7 @@ def _radar_table(title, rows, ratio_label):
             f'<td style="color:#ffcc00">{p_s}</td><td>{_pct_html(chg)}</td>'
             f'<td style="color:#00ff41;font-weight:bold">{ratio:.2f}x</td></tr>'
         )
-    return f'''<div style="border:1px solid #333;background:#000">
+    return f'''<div style="border:1px solid #333;background:#000;min-height:{min_height}px;display:flex;flex-direction:column">
   <div style="background:#111;color:#ff6600;font-size:11px;font-weight:bold;letter-spacing:2px;text-transform:uppercase;padding:4px 8px;border-bottom:1px solid #ff6600">{title}</div>
   <table class="t" style="border-collapse:collapse;width:100%">
     <thead><tr><th>TICKER</th><th>SECTOR</th><th>PRECIO</th><th>% DIA</th><th>{ratio_label}</th></tr></thead>
@@ -532,7 +534,8 @@ def _render_radar(quotes):
     st.markdown(
         '<div style="color:#666;font-size:11px;margin-bottom:8px">'
         'VOLUMEN INUSUAL = monto de hoy vs. su propio promedio de 21 ruedas &nbsp;·&nbsp; '
-        'ACUMULACIÓN DE VOLUMEN = promedio de las últimas 5 ruedas vs. las 16 previas'
+        'ACUMULACIÓN DE VOLUMEN = mediana de las últimas 5 ruedas vs. promedio de las 16 previas '
+        '(la mediana evita que un solo día outlier se confunda con tendencia real)'
         '</div>', unsafe_allow_html=True
     )
 
