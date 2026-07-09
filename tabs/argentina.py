@@ -139,9 +139,10 @@ def _fetch_arg_equity():
                 # Serie diaria de monto operado (precio × volumen), alineada por fecha
                 monto_series = (closes * volumes).dropna()
 
-                avg_monto_21 = None
-                monto_ratio  = None
-                trend_ratio  = None
+                avg_monto_21   = None
+                monto_ratio    = None
+                trend_ratio    = None
+                trend_base_avg = None
                 if len(monto_series) >= 3:
                     # Todas las ruedas previas a hoy, últimas 21 disponibles
                     hist = monto_series.iloc[:-1].tail(21)
@@ -159,21 +160,24 @@ def _fetch_arg_equity():
                         if len(base_n) >= 3:
                             base_avg = float(base_n.mean())
                             if base_avg > 0:
-                                trend_ratio = float(recent_5.mean()) / base_avg
+                                trend_ratio    = float(recent_5.mean()) / base_avg
+                                trend_base_avg = base_avg
 
                 result[ticker] = {
-                    "price":        price,
-                    "change_pct":   round(chg, 2),
-                    "volume":       vol,
-                    "monto":        round(monto),
-                    "avg_monto_21": round(avg_monto_21) if avg_monto_21 else None,
-                    "monto_ratio":  round(monto_ratio, 2) if monto_ratio is not None else None,
-                    "trend_ratio":  round(trend_ratio, 2) if trend_ratio is not None else None,
+                    "price":          price,
+                    "change_pct":     round(chg, 2),
+                    "volume":         vol,
+                    "monto":          round(monto),
+                    "avg_monto_21":   round(avg_monto_21) if avg_monto_21 else None,
+                    "monto_ratio":    round(monto_ratio, 2) if monto_ratio is not None else None,
+                    "trend_ratio":    round(trend_ratio, 2) if trend_ratio is not None else None,
+                    "trend_base_avg": round(trend_base_avg) if trend_base_avg else None,
                 }
             except Exception:
                 result[ticker] = {
                     "price": None, "change_pct": 0, "volume": 0, "monto": 0,
                     "avg_monto_21": None, "monto_ratio": None, "trend_ratio": None,
+                    "trend_base_avg": None,
                 }
 
     except Exception:
@@ -181,6 +185,7 @@ def _fetch_arg_equity():
             result[t] = {
                 "price": None, "change_pct": 0, "volume": 0, "monto": 0,
                 "avg_monto_21": None, "monto_ratio": None, "trend_ratio": None,
+                "trend_base_avg": None,
             }
 
     return result
@@ -500,6 +505,10 @@ def _radar_table(title, rows, ratio_label):
 def _render_radar(quotes):
     sector_map = _ticker_sector_map()
 
+    # Piso de liquidez: por debajo de esto, el ratio no es confiable (dividir por casi-cero
+    # en papeles ilíquidos da ratios gigantes que no significan nada). Ajustable.
+    MIN_MONTO_FLOOR = 3_000_000
+
     spikes = []
     trends = []
     for t in ALL_TICKERS:
@@ -508,11 +517,13 @@ def _render_radar(quotes):
         chg   = q.get("change_pct", 0)
         mr    = q.get("monto_ratio")
         tr    = q.get("trend_ratio")
+        avg21 = q.get("avg_monto_21")
+        base16 = q.get("trend_base_avg")
         sector = sector_map.get(t, "—")
 
-        if mr is not None and mr >= 1.5:
+        if mr is not None and mr >= 1.5 and (avg21 or 0) >= MIN_MONTO_FLOOR:
             spikes.append((t, sector, price, chg, mr))
-        if tr is not None and tr >= 1.15:
+        if tr is not None and tr >= 1.15 and (base16 or 0) >= MIN_MONTO_FLOOR:
             trends.append((t, sector, price, chg, tr))
 
     spikes.sort(key=lambda x: x[4], reverse=True)
