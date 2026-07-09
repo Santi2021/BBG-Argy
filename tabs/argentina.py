@@ -203,30 +203,45 @@ def _fetch_arg_equity():
                             is_new_low    = week_low <= prior_low * 1.001
                             pct_from_low  = (price / prior_low - 1) * 100
 
-                # YTD: precio contra el primer cierre disponible del año calendario en curso
+                # Ancla robusta: mediana de una pequeña ventana de días alrededor del
+                # punto de referencia, en vez de un solo cierre puntual. Esto evita que
+                # un día anómalo (ej. el debut ilíquido de un ticker recién listado, con
+                # precio de descubrimiento poco representativo) contamine todo el retorno
+                # — mismo principio que la mediana usada en Acumulación de Volumen.
+                def _robust_base(idx_from_end):
+                    idx = len(closes) - 1 - idx_from_end
+                    if idx < 0:
+                        return None
+                    lo, hi = max(0, idx - 2), min(len(closes), idx + 3)
+                    window = closes.iloc[lo:hi]
+                    if len(window) == 0:
+                        return None
+                    val = float(window.median())
+                    return val if val > 0 else None
+
+                # YTD: mediana de los primeros días disponibles del año calendario en curso
                 ytd_return = None
                 if price is not None and len(closes) >= 2:
                     last_year = closes.index[-1].year
                     ytd_series = closes[closes.index.year == last_year]
                     if len(ytd_series) >= 2:
-                        start_price = float(ytd_series.iloc[0])
+                        start_price = float(ytd_series.iloc[:3].median())
                         if start_price > 0:
                             ytd_return = (price / start_price - 1) * 100
 
                 # Retornos por ventana fija (en ruedas hábiles), para el selector de período.
                 # Para 12M no exigimos un número exacto de ruedas (yfinance con period="1y"
                 # no siempre devuelve el mismo conteo por feriados/días sin operar) — usamos
-                # el primer dato disponible de la ventana de ~1 año como base.
+                # la mediana de los primeros días disponibles de la ventana de ~1 año.
                 def _ret_lookback(n):
-                    if price is not None and len(closes) > n:
-                        base = float(closes.iloc[-1 - n])
-                        if base > 0:
-                            return (price / base - 1) * 100
-                    return None
+                    if price is None or len(closes) <= n:
+                        return None
+                    base = _robust_base(n)
+                    return (price / base - 1) * 100 if base else None
 
                 ret_12m = None
                 if price is not None and len(closes) >= 180:  # ~9 meses mínimo para llamarlo "12M"
-                    base = float(closes.iloc[0])
+                    base = float(closes.iloc[:5].median())
                     if base > 0:
                         ret_12m = (price / base - 1) * 100
 
@@ -694,11 +709,25 @@ def _render_radar(quotes):
 
     # ── PERFORMANCE (selector de período) ──
     _radar_section("PERFORMANCE")
-    period_labels = {"1S": "1 Semana", "1M": "1 Mes", "3M": "3 Meses", "YTD": "YTD", "12M": "12 Meses"}
-    period = st.radio(
-        "Período", list(period_labels.keys()), index=3, horizontal=True,
-        format_func=lambda k: period_labels[k], key="radar_period", label_visibility="collapsed",
-    )
+    period_labels = {"1S": "1 SEMANA", "1M": "1 MES", "3M": "3 MESES", "YTD": "YTD", "12M": "12 MESES"}
+    period_keys = list(period_labels.keys())
+
+    if "radar_period" not in st.session_state:
+        st.session_state.radar_period = "YTD"
+
+    with st.container(key="radar_period_buttons"):
+        pcols = st.columns(len(period_keys))
+        for i, pk in enumerate(period_keys):
+            with pcols[i]:
+                active = st.session_state.radar_period == pk
+                if st.button(
+                    period_labels[pk], key=f"radar_btn_{pk}",
+                    use_container_width=True,
+                    type="primary" if active else "secondary",
+                ):
+                    st.session_state.radar_period = pk
+
+    period = st.session_state.radar_period
 
     perf_pool = []
     for t in ALL_TICKERS:
@@ -758,13 +787,13 @@ def _render_radar(quotes):
         unsafe_allow_html=True,
     )
     st.markdown(_radar_table(
-        "NUEVOS MÁXIMOS 52 SEM.", new_highs[:15], "VS MAX PREVIO",
-        min_height=_calc_table_height(len(new_highs), max_rows=15), value_fmt=_fmt_pct_signed,
+        "NUEVOS MÁXIMOS 52 SEM.", new_highs[:8], "VS MAX PREVIO",
+        min_height=_calc_table_height(len(new_highs[:8]), max_rows=8), value_fmt=_fmt_pct_signed,
     ), unsafe_allow_html=True)
     st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
     st.markdown(_radar_table(
-        "NUEVOS MÍNIMOS 52 SEM.", new_lows[:15], "VS MIN PREVIO",
-        min_height=_calc_table_height(len(new_lows), max_rows=15), value_fmt=_fmt_pct_signed,
+        "NUEVOS MÍNIMOS 52 SEM.", new_lows[:8], "VS MIN PREVIO",
+        min_height=_calc_table_height(len(new_lows[:8]), max_rows=8), value_fmt=_fmt_pct_signed,
     ), unsafe_allow_html=True)
 
 
