@@ -7,7 +7,18 @@ import streamlit as st
 import plotly.graph_objects as go
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from data import fmt_price, fmt_change, _get_closes
+from data import _get_closes
+
+
+def _price_fmt(val):
+    """Precio sin decimales, propio de este tab (no toca fmt_price compartido)."""
+    if val is None:
+        return "—"
+    try:
+        return f"{float(val):,.0f}"
+    except (ValueError, TypeError):
+        return str(val)
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  SECTOR DEFINITIONS — tickers BYMA en ARS
@@ -156,9 +167,9 @@ def _vol_fmt(v):
     if not v or v == 0:
         return "—"
     if v >= 1_000_000_000:
-        return f"{v/1_000_000_000:.1f}B"
+        return f"{v/1_000_000_000:.0f}B"
     if v >= 1_000_000:
-        return f"{v/1_000_000:.1f}M"
+        return f"{v/1_000_000:.0f}M"
     if v >= 1_000:
         return f"{v/1_000:.0f}K"
     return str(v)
@@ -191,7 +202,7 @@ def _build_sector_panel(sector_name, tickers, quotes, accent_color):
     for t, q, monto in items:
         p = q.get("price")
         chg = q.get("change_pct", 0)
-        p_s = fmt_price(p) if p else "—"
+        p_s = _price_fmt(p) if p else "—"
         m_s = _vol_fmt(monto)
         rows += f'<tr><td>{t}</td><td style="color:#ffcc00">{p_s}</td><td>{_pct_html(chg)}</td><td style="color:#999">{m_s}</td></tr>'
 
