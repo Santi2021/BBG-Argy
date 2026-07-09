@@ -164,10 +164,10 @@ def _vol_fmt(v):
     return str(v)
 
 
-def _panel_html(title, headers, rows_html, accent_color="#ff6600", max_height=220):
+def _panel_html(title, headers, rows_html, accent_color="#ff6600", max_height=260):
     ths = "".join(f"<th>{h}</th>" for h in headers)
     return f"""<div style="border:1px solid #333;background:#000;height:{max_height}px;display:flex;flex-direction:column;overflow:hidden">
-  <div style="background:#111;color:{accent_color};font-size:9px;font-weight:bold;letter-spacing:2px;text-transform:uppercase;padding:3px 8px;border-bottom:1px solid {accent_color};flex-shrink:0">{title}</div>
+  <div style="background:#111;color:{accent_color};font-size:11px;font-weight:bold;letter-spacing:2px;text-transform:uppercase;padding:4px 8px;border-bottom:1px solid {accent_color};flex-shrink:0">{title}</div>
   <div style="overflow-y:auto;flex:1">
     <table class="t" style="border-collapse:collapse;width:100%">
       <thead><tr style="position:sticky;top:0;z-index:2;background:#111">{ths}</tr></thead>
@@ -193,7 +193,7 @@ def _build_sector_panel(sector_name, tickers, quotes, accent_color):
         chg = q.get("change_pct", 0)
         p_s = fmt_price(p) if p else "—"
         m_s = _vol_fmt(monto)
-        rows += f'<tr><td>{t}</td><td style="color:#ffcc00">{p_s}</td><td>{_pct_html(chg)}</td><td style="color:#555">{m_s}</td></tr>'
+        rows += f'<tr><td>{t}</td><td style="color:#ffcc00">{p_s}</td><td>{_pct_html(chg)}</td><td style="color:#999">{m_s}</td></tr>'
 
     count = len(tickers)
     vol_s = _vol_fmt(total_monto)
