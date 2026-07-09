@@ -19,12 +19,12 @@ SECTORS = {
         "color": "#00bfff",
     },
     "ENERGÍA": {
-        "tickers": ["YPFD", "PAMP", "CAPX", "ECOG", "VIST"],
+        "tickers": ["YPFD", "PAMP", "CAPX", "VIST"],
         "color": "#ff6600",
     },
     "UTILITIES": {
         "tickers": ["CEPU", "EDN", "TGNO4", "TGSU2", "METR", "TRAN",
-                     "CECO2", "CGPA2", "DGCU2", "GBAN", "AUSO", "OEST"],
+                     "CECO2", "CGPA2", "DGCU2", "GBAN", "AUSO", "OEST", "ECOG"],
         "color": "#ffcc00",
     },
     "MATERIALES": {
