@@ -196,6 +196,16 @@ div[data-testid="stAppViewBlockContainer"] { padding-top: 0 !important; }
 .stRadio [aria-checked="true"] + div { color:#ff6600 !important; }
 pre { background:#050505 !important; border:1px solid #222 !important; font-size:9px !important; }
 [data-testid="stTabBar"] [data-baseweb="tab-list"] { background: transparent !important; }
+
+/* ── Radio button (selector de período) — estilo terminal ── */
+[data-testid="stRadio"] label {
+    font-family: 'Courier New', monospace !important;
+    color: #ccc !important;
+    font-size: 12px !important;
+    letter-spacing: 1px;
+}
+[data-testid="stRadio"] input[type="radio"] { accent-color: #ff6600; }
+[data-testid="stRadio"] > div[role="radiogroup"] { gap: 18px !important; }
 </style>
 """, unsafe_allow_html=True)
 
