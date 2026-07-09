@@ -122,14 +122,14 @@ div[data-testid="stAppViewBlockContainer"] { padding-top: 0 !important; }
       text-transform:uppercase; border-bottom:1px solid #333;
       padding-bottom:3px; margin-bottom:4px; margin-top:8px; }
 
-.t { width:100%; border-collapse:collapse; font-family:'Courier New',monospace; font-size:11px; }
+.t { width:100%; border-collapse:collapse; font-family:'Courier New',monospace; font-size:13px; }
 .t thead tr { background:#111; }
-.t thead th { color:#ff6600; font-size:8px; font-weight:bold; letter-spacing:1px;
+.t thead th { color:#ff6600; font-size:10px; font-weight:bold; letter-spacing:1px;
               text-transform:uppercase; text-align:left; padding:2px 6px;
               border-bottom:1px solid #ff6600; white-space:nowrap; }
 .t tbody tr { border-bottom:1px solid #0a0a0a; }
 .t tbody tr:hover { background:#0a0a0a; }
-.t tbody td { padding:2px 6px; text-align:left; color:#ccc; font-size:11px; white-space:nowrap; }
+.t tbody td { padding:4px 8px; text-align:left; color:#ccc; font-size:13px; white-space:nowrap; }
 .t tbody td:first-child { color:#fff; font-weight:bold; }
 
 .bbg-table { width:100%; border-collapse:collapse; font-family:'Courier New',monospace; font-size:11px; }
