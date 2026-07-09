@@ -19,7 +19,7 @@ SECTORS = {
         "color": "#00bfff",
     },
     "ENERGÍA": {
-        "tickers": ["YPFD", "PAMP", "CAPX", "COME"],
+        "tickers": ["YPFD", "PAMP", "CAPX", "ECOG", "VIST"],
         "color": "#ff6600",
     },
     "UTILITIES": {
@@ -37,11 +37,11 @@ SECTORS = {
         "color": "#00ff41",
     },
     "TELECOM & MEDIOS": {
-        "tickers": ["TECO2", "CVH", "GCLA"],
+        "tickers": ["TECO2", "CVH", "GCLA", "HSAT"],
         "color": "#60a5fa",
     },
     "REAL ESTATE": {
-        "tickers": ["IRSA", "CTIO", "CADO", "INVJ", "IEB"],
+        "tickers": ["IRSA", "CTIO", "CADO", "INVJ", "IEB", "RAGH"],
         "color": "#f59e0b",
     },
     "INDUSTRIA & CONSUMO": {
@@ -51,7 +51,7 @@ SECTORS = {
     },
     "OTROS": {
         "tickers": ["A3", "BOLT", "CARC", "FIPL", "GAMI", "GARO",
-                     "GCDI", "INTR", "MERA", "POLL"],
+                     "GCDI", "INTR", "MERA", "POLL", "COME"],
         "color": "#555",
     },
 }
