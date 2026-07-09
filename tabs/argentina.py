@@ -89,7 +89,12 @@ def _prev_close_fallback(sym: str) -> float | None:
 
 @st.cache_data(ttl=60, show_spinner=False)
 def _fetch_arg_equity():
-    """Fetch all Argentine equity data via yfinance .BA tickers."""
+    """Fetch all Argentine equity data via yfinance .BA tickers.
+
+    Baja ~60 días calendario (≈40 ruedas) para poder calcular el monto
+    operado promedio de las últimas 21 ruedas por ticker, y compararlo
+    contra el monto de hoy (monto_ratio).
+    """
     import yfinance as yf
     import pandas as pd
 
@@ -99,7 +104,7 @@ def _fetch_arg_equity():
 
     try:
         raw = yf.download(
-            yf_symbols, period="5d", interval="1d",
+            yf_symbols, period="60d", interval="1d",
             auto_adjust=True, progress=False, threads=True,
         )
 
@@ -131,18 +136,40 @@ def _fetch_arg_equity():
                 vol   = int(volumes.iloc[-1]) if len(volumes) > 0 else 0
                 monto = vol * price if (vol and price) else 0
 
+                # Serie diaria de monto operado (precio × volumen), alineada por fecha
+                monto_series = (closes * volumes).dropna()
+
+                avg_monto_21 = None
+                monto_ratio  = None
+                if len(monto_series) >= 3:
+                    # Todas las ruedas previas a hoy, últimas 21 disponibles
+                    hist = monto_series.iloc[:-1].tail(21)
+                    if len(hist) >= 3:
+                        avg_val = float(hist.mean())
+                        if avg_val > 0:
+                            avg_monto_21 = avg_val
+                            monto_ratio  = monto / avg_val if monto else 0.0
+
                 result[ticker] = {
-                    "price":      price,
-                    "change_pct": round(chg, 2),
-                    "volume":     vol,
-                    "monto":      round(monto),
+                    "price":        price,
+                    "change_pct":   round(chg, 2),
+                    "volume":       vol,
+                    "monto":        round(monto),
+                    "avg_monto_21": round(avg_monto_21) if avg_monto_21 else None,
+                    "monto_ratio":  round(monto_ratio, 2) if monto_ratio is not None else None,
                 }
             except Exception:
-                result[ticker] = {"price": None, "change_pct": 0, "volume": 0, "monto": 0}
+                result[ticker] = {
+                    "price": None, "change_pct": 0, "volume": 0, "monto": 0,
+                    "avg_monto_21": None, "monto_ratio": None,
+                }
 
     except Exception:
         for t in ALL_TICKERS:
-            result[t] = {"price": None, "change_pct": 0, "volume": 0, "monto": 0}
+            result[t] = {
+                "price": None, "change_pct": 0, "volume": 0, "monto": 0,
+                "avg_monto_21": None, "monto_ratio": None,
+            }
 
     return result
 
@@ -191,25 +218,38 @@ def _panel_html(title, headers, rows_html, accent_color="#ff6600", max_height=26
 def _build_sector_panel(sector_name, tickers, quotes, accent_color):
     items = []
     total_monto = 0
+    total_avg21 = 0
     for t in tickers:
         q = quotes.get(t, {})
         monto = q.get("monto", 0) or 0
         items.append((t, q, monto))
         total_monto += monto
+        total_avg21 += q.get("avg_monto_21") or 0
     items.sort(key=lambda x: x[2], reverse=True)
 
     rows = ""
     for t, q, monto in items:
-        p = q.get("price")
-        chg = q.get("change_pct", 0)
-        p_s = _price_fmt(p) if p else "—"
-        m_s = _vol_fmt(monto)
-        rows += f'<tr><td>{t}</td><td style="color:#ffcc00">{p_s}</td><td>{_pct_html(chg)}</td><td style="color:#999">{m_s}</td></tr>'
+        p         = q.get("price")
+        chg       = q.get("change_pct", 0)
+        avg21     = q.get("avg_monto_21")
+        ratio     = q.get("monto_ratio")
+        p_s       = _price_fmt(p) if p else "—"
+        m_s       = _vol_fmt(monto)
+        avg_s     = _vol_fmt(avg21) if avg21 else "—"
+        # Resalta el monto de hoy si opera muy por encima de su propio promedio 21d
+        monto_color = "#00ff41" if (ratio is not None and ratio >= 1.5) else "#999"
+        rows += (
+            f'<tr><td>{t}</td><td style="color:#ffcc00">{p_s}</td>'
+            f'<td>{_pct_html(chg)}</td>'
+            f'<td style="color:{monto_color};font-weight:{"bold" if monto_color=="#00ff41" else "normal"}">{m_s}</td>'
+            f'<td style="color:#666">{avg_s}</td></tr>'
+        )
 
     count = len(tickers)
     vol_s = _vol_fmt(total_monto)
-    title = f"{sector_name} · {count} · MONTO {vol_s}"
-    return _panel_html(title, ["TICKER", "PRECIO", "% DIA", "MONTO"], rows, accent_color)
+    avg_total_s = _vol_fmt(total_avg21) if total_avg21 else "—"
+    title = f"{sector_name} · {count} · MONTO {vol_s} · PROM {avg_total_s}"
+    return _panel_html(title, ["TICKER", "PRECIO", "% DIA", "MONTO", "PROM 21D"], rows, accent_color)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -388,6 +428,32 @@ def _build_heatmap(quotes):
 #  RENDER
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def _market_kpi_html(quotes):
+    total_monto = sum((quotes.get(t, {}).get("monto") or 0) for t in ALL_TICKERS)
+    total_avg21 = sum((quotes.get(t, {}).get("avg_monto_21") or 0) for t in ALL_TICKERS)
+    ratio = (total_monto / total_avg21) if total_avg21 else None
+
+    ratio_color = "#00ff41" if (ratio is not None and ratio >= 1.2) else (
+                  "#ff3b3b" if (ratio is not None and ratio <= 0.8) else "#ccc")
+    ratio_s = f"{ratio:.2f}x" if ratio is not None else "—"
+
+    def _kpi(label, value, color="#fff"):
+        return (
+            '<div style="border:1px solid #333;background:#000;padding:6px 14px;flex:1">'
+            f'<div style="color:#666;font-size:9px;letter-spacing:2px;text-transform:uppercase">{label}</div>'
+            f'<div style="color:{color};font-size:18px;font-weight:bold;font-family:\'Courier New\',monospace">{value}</div>'
+            '</div>'
+        )
+
+    return (
+        '<div style="display:flex;gap:4px;margin-bottom:6px">'
+        + _kpi("MONTO TOTAL HOY", _vol_fmt(total_monto), "#ffcc00")
+        + _kpi("PROMEDIO 21D", _vol_fmt(total_avg21), "#999")
+        + _kpi("RATIO HOY/PROM", ratio_s, ratio_color)
+        + '</div>'
+    )
+
+
 def render():
     subtabs = st.tabs(["SECTORES", "HEATMAP"])
 
@@ -395,6 +461,8 @@ def render():
         quotes = _fetch_arg_equity()
 
     with subtabs[0]:
+        st.markdown(_market_kpi_html(quotes), unsafe_allow_html=True)
+
         sector_list = list(SECTORS.items())
 
         panels = []
