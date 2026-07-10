@@ -142,11 +142,23 @@ def _fetch_arg_equity(_cache_bucket=None):
     def _fetch_one(yf_sym):
         """Descarga UN ticker por separado (no batch) — evita el bug de yfinance
         donde un batch grande de símbolos devuelve datos incompletos para un
-        subconjunto sin avisar. Reintenta una vez si viene vacío."""
+        subconjunto sin avisar. Reintenta una vez si viene vacío.
+
+        Además recorta del final cualquier rueda "fantasma" (feriado/día sin
+        operatoria): Yahoo a veces repite el cierre anterior con volumen 0 en
+        vez de simplemente omitir el día. Sin este recorte, un feriado se
+        mostraba como si fuera "hoy" con % DIA en 0 y Monto vacío — no era un
+        dato roto, era un feriado mal interpretado como sesión real."""
         for attempt in range(2):
             try:
                 hist = yf.Ticker(yf_sym).history(period="1y", interval="1d", auto_adjust=True)
-                if hist is not None and len(hist) > 0:
+                if hist is None or len(hist) == 0:
+                    continue
+                vol = hist["Volume"]
+                while len(hist) > 0 and (pd.isna(vol.iloc[-1]) or vol.iloc[-1] == 0):
+                    hist = hist.iloc[:-1]
+                    vol = hist["Volume"]
+                if len(hist) > 0:
                     return hist["Close"].dropna(), hist["Volume"].dropna()
             except Exception:
                 pass
