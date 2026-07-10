@@ -5,9 +5,9 @@ ARGENTINA — Equity por Sectores
 """
 import streamlit as st
 import plotly.graph_objects as go
+import yfinance as yf
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from data import _get_closes
 
 
 def _price_fmt(val):
@@ -124,12 +124,10 @@ def _fetch_arg_equity(_cache_bucket=None):
     El argumento _cache_bucket (ver _radar_cache_bucket) es lo que realmente
     controla cuándo se refresca — el ttl=600 es solo un piso de seguridad.
     """
-    import yfinance as yf
     import pandas as pd
-    import time
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
     yf_symbols = [f"{t}.BA" for t in ALL_TICKERS]
-    n = len(yf_symbols)
     result = {}
 
     empty_record = {
@@ -141,49 +139,29 @@ def _fetch_arg_equity(_cache_bucket=None):
         "returns": {"1S": None, "1M": None, "3M": None, "YTD": None, "12M": None},
     }
 
-    # Nombres que sabemos con certeza que son súper líquidos — si varios de
-    # estos vienen con volumen de hoy en cero, es señal de que el batch de
-    # yfinance vino incompleto (no de que "no operaron"), y conviene reintentar
-    # antes de aceptar el resultado (más todavía ahora que se congela hasta
-    # el próximo horario de apertura).
-    _LIQUID_CHECK = ["GGAL", "YPFD", "BMA", "PAMP", "BBAR"]
+    def _fetch_one(yf_sym):
+        """Descarga UN ticker por separado (no batch) — evita el bug de yfinance
+        donde un batch grande de símbolos devuelve datos incompletos para un
+        subconjunto sin avisar. Reintenta una vez si viene vacío."""
+        for attempt in range(2):
+            try:
+                hist = yf.Ticker(yf_sym).history(period="1y", interval="1d", auto_adjust=True)
+                if hist is not None and len(hist) > 0:
+                    return hist["Close"].dropna(), hist["Volume"].dropna()
+            except Exception:
+                pass
+        return pd.Series(dtype=float), pd.Series(dtype=float)
 
-    def _quality_ok(raw_df):
-        try:
-            zero_count = 0
-            for t in _LIQUID_CHECK:
-                sym = f"{t}.BA"
-                vols = raw_df["Volume"][sym].dropna() if isinstance(raw_df.columns, pd.MultiIndex) else None
-                if vols is None or len(vols) == 0 or vols.iloc[-1] == 0:
-                    zero_count += 1
-            return zero_count <= 1  # tolera 1 de 5 en cero, más que eso = sospechoso
-        except Exception:
-            return True  # si el chequeo en sí falla, no bloqueamos el flujo normal
+    hist_by_ticker = {}
+    with ThreadPoolExecutor(max_workers=10) as pool:
+        futures = {pool.submit(_fetch_one, sym): ticker for ticker, sym in zip(ALL_TICKERS, yf_symbols)}
+        for fut in as_completed(futures):
+            hist_by_ticker[futures[fut]] = fut.result()
 
     try:
-        raw = None
-        for attempt in range(3):
-            raw = yf.download(
-                yf_symbols, period="1y", interval="1d",
-                auto_adjust=True, progress=False, threads=True,
-            )
-            if _quality_ok(raw):
-                break
-            if attempt < 2:
-                time.sleep(2)
-
         for ticker, yf_sym in zip(ALL_TICKERS, yf_symbols):
             try:
-                closes  = _get_closes(raw, yf_sym, n).dropna()
-                # Volume — mismo patrón de acceso
-                if isinstance(raw.columns, pd.MultiIndex):
-                    level0 = raw.columns.get_level_values(0).tolist()
-                    if "Volume" in level0:
-                        volumes = raw["Volume"][yf_sym].dropna()
-                    else:
-                        volumes = raw[yf_sym]["Volume"].dropna()
-                else:
-                    volumes = pd.Series(dtype=float)
+                closes, volumes = hist_by_ticker.get(ticker, (pd.Series(dtype=float), pd.Series(dtype=float)))
 
                 if len(closes) >= 2:
                     price = float(closes.iloc[-1])
