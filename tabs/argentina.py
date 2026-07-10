@@ -670,7 +670,6 @@ def _render_radar(quotes):
     MIN_MONTO_FLOOR = 3_000_000
 
     spikes, trends = [], []
-    new_highs, new_lows = [], []
     mover_pool = []
 
     for t in ALL_TICKERS:
@@ -691,17 +690,10 @@ def _render_radar(quotes):
         if tr is not None and tr >= 1.15:
             trends.append((t, sector, price, chg, tr))
 
-        if q.get("is_new_high"):
-            new_highs.append((t, sector, price, chg, q.get("pct_from_high") or 0.0))
-        if q.get("is_new_low"):
-            new_lows.append((t, sector, price, chg, q.get("pct_from_low") or 0.0))
-
         mover_pool.append((t, sector, price, chg, chg))
 
     spikes.sort(key=lambda x: x[4], reverse=True)
     trends.sort(key=lambda x: x[4], reverse=True)
-    new_highs.sort(key=lambda x: x[4], reverse=True)   # más cerca de 0% = más "nuevo"
-    new_lows.sort(key=lambda x: x[4])                  # más negativo = más "nuevo"
     movers_up   = sorted(mover_pool, key=lambda x: x[4], reverse=True)[:5]
     movers_down = sorted(mover_pool, key=lambda x: x[4])[:5]
 
@@ -760,10 +752,6 @@ def _render_radar(quotes):
         + _radar_table(f"TOP 5 MEJORES · {period_labels[period]}", perf_best, period, value_fmt=_fmt_pct_signed)
         + _radar_mini_header("FLUJOS DE VOLUMEN")
         + _radar_table("VOLUMEN INUSUAL", spikes[:15], "HOY/PROM")
-        + '<div style="color:#555;font-size:10px;margin-top:4px">'
-          'Monto de hoy vs. su propio promedio de 21 ruedas</div>'
-        + _radar_mini_header("EXTREMOS DE PRECIO — 52 SEMANAS")
-        + _radar_table("NUEVOS MÁXIMOS 52 SEM.", new_highs[:8], "VS MAX PREVIO", value_fmt=_fmt_pct_signed)
     )
 
     right_html = (
@@ -773,10 +761,6 @@ def _render_radar(quotes):
         + _radar_table(f"TOP 5 PEORES · {period_labels[period]}", perf_worst, period, value_fmt=_fmt_pct_signed)
         + _radar_mini_header("FLUJOS DE VOLUMEN")
         + _radar_table("ACUMULACIÓN DE VOLUMEN", trends[:15], "5D/16D")
-        + '<div style="color:#555;font-size:10px;margin-top:4px">'
-          'Mediana de últimas 5 ruedas vs. promedio de las 16 previas</div>'
-        + _radar_mini_header("EXTREMOS DE PRECIO — 52 SEMANAS")
-        + _radar_table("NUEVOS MÍNIMOS 52 SEM.", new_lows[:8], "VS MIN PREVIO", value_fmt=_fmt_pct_signed)
     )
 
     st.markdown(_radar_row(left_html, right_html), unsafe_allow_html=True)
