@@ -697,21 +697,21 @@ def _render_radar(quotes):
     movers_up   = sorted(mover_pool, key=lambda x: x[4], reverse=True)[:5]
     movers_down = sorted(mover_pool, key=lambda x: x[4])[:5]
 
-    st.markdown(
-        f'<div style="color:#666;font-size:11px;margin-bottom:8px">'
-        f'Todas las categorías excluyen papeles con promedio operado por debajo de '
-        f'{_vol_fmt(MIN_MONTO_FLOOR)} — evita ratios/% inflados por baja liquidez.'
-        f'</div>', unsafe_allow_html=True
-    )
+    # ── MOVERS DEL DÍA ──
+    left_movers = _radar_mini_header("MOVERS DEL DÍA") + _radar_table_simple("TOP 5 SUBEN HOY", movers_up)
+    right_movers = _radar_mini_header("MOVERS DEL DÍA") + _radar_table_simple("TOP 5 BAJAN HOY", movers_down)
+    st.markdown(_radar_row(left_movers, right_movers), unsafe_allow_html=True)
 
-    # ── Selector de período (necesita interactividad real de Streamlit,
-    #    va aparte del bloque de grid HTML de abajo) ──
+    # ── Selector de período — va pegado arriba de Performance, que es a lo único
+    #    que aplica. Necesita interactividad real de Streamlit, por eso está
+    #    aparte de los bloques de grid HTML. ──
     period_labels = {"1S": "1 SEMANA", "1M": "1 MES", "3M": "3 MESES", "YTD": "YTD", "12M": "12 MESES"}
     period_keys = list(period_labels.keys())
 
     if "radar_period" not in st.session_state:
         st.session_state.radar_period = "YTD"
 
+    st.markdown(_radar_mini_header("PERFORMANCE"), unsafe_allow_html=True)
     with st.container(key="radar_period_buttons"):
         pcols = st.columns(len(period_keys))
         for i, pk in enumerate(period_keys):
@@ -719,7 +719,6 @@ def _render_radar(quotes):
                 active = st.session_state.radar_period == pk
                 if st.button(
                     period_labels[pk], key=f"radar_btn_{pk}",
-                    use_container_width=True,
                     type="primary" if active else "secondary",
                 ):
                     st.session_state.radar_period = pk
@@ -740,30 +739,14 @@ def _render_radar(quotes):
     perf_best  = sorted(perf_pool, key=lambda x: x[4], reverse=True)[:5]
     perf_worst = sorted(perf_pool, key=lambda x: x[4])[:5]
 
-    # ── Todo el resto: DOS COLUMNAS COMPLETAS, apiladas de punta a punta,
-    #    en un único bloque HTML — no pares por sección. Izquierda = alcista/
-    #    spike, derecha = bajista/tendencia. Como es un solo <div> por columna,
-    #    Streamlit no tiene forma de estirar una para igualar a la otra: la
-    #    altura final de cada columna es simplemente la suma de su contenido. ──
-    left_html = (
-        _radar_mini_header("MOVERS DEL DÍA")
-        + _radar_table_simple("TOP 5 SUBEN HOY", movers_up)
-        + _radar_mini_header("PERFORMANCE")
-        + _radar_table(f"TOP 5 MEJORES · {period_labels[period]}", perf_best, period, value_fmt=_fmt_pct_signed)
-        + _radar_mini_header("FLUJOS DE VOLUMEN")
-        + _radar_table("VOLUMEN INUSUAL", spikes[:15], "HOY/PROM")
-    )
+    left_perf = _radar_table(f"TOP 5 MEJORES · {period_labels[period]}", perf_best, period, value_fmt=_fmt_pct_signed)
+    right_perf = _radar_table(f"TOP 5 PEORES · {period_labels[period]}", perf_worst, period, value_fmt=_fmt_pct_signed)
+    st.markdown(_radar_row(left_perf, right_perf), unsafe_allow_html=True)
 
-    right_html = (
-        _radar_mini_header("MOVERS DEL DÍA")
-        + _radar_table_simple("TOP 5 BAJAN HOY", movers_down)
-        + _radar_mini_header("PERFORMANCE")
-        + _radar_table(f"TOP 5 PEORES · {period_labels[period]}", perf_worst, period, value_fmt=_fmt_pct_signed)
-        + _radar_mini_header("FLUJOS DE VOLUMEN")
-        + _radar_table("ACUMULACIÓN DE VOLUMEN", trends[:15], "5D/16D")
-    )
-
-    st.markdown(_radar_row(left_html, right_html), unsafe_allow_html=True)
+    # ── FLUJOS DE VOLUMEN ──
+    left_flujos = _radar_mini_header("FLUJOS DE VOLUMEN") + _radar_table("VOLUMEN INUSUAL", spikes[:15], "HOY/PROM")
+    right_flujos = _radar_mini_header("FLUJOS DE VOLUMEN") + _radar_table("ACUMULACIÓN DE VOLUMEN", trends[:15], "5D/16D")
+    st.markdown(_radar_row(left_flujos, right_flujos), unsafe_allow_html=True)
 
 
 def render():
