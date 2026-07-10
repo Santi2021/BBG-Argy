@@ -126,6 +126,7 @@ def _fetch_arg_equity(_cache_bucket=None):
     """
     import yfinance as yf
     import pandas as pd
+    import time
 
     yf_symbols = [f"{t}.BA" for t in ALL_TICKERS]
     n = len(yf_symbols)
@@ -140,11 +141,36 @@ def _fetch_arg_equity(_cache_bucket=None):
         "returns": {"1S": None, "1M": None, "3M": None, "YTD": None, "12M": None},
     }
 
+    # Nombres que sabemos con certeza que son súper líquidos — si varios de
+    # estos vienen con volumen de hoy en cero, es señal de que el batch de
+    # yfinance vino incompleto (no de que "no operaron"), y conviene reintentar
+    # antes de aceptar el resultado (más todavía ahora que se congela hasta
+    # el próximo horario de apertura).
+    _LIQUID_CHECK = ["GGAL", "YPFD", "BMA", "PAMP", "BBAR"]
+
+    def _quality_ok(raw_df):
+        try:
+            zero_count = 0
+            for t in _LIQUID_CHECK:
+                sym = f"{t}.BA"
+                vols = raw_df["Volume"][sym].dropna() if isinstance(raw_df.columns, pd.MultiIndex) else None
+                if vols is None or len(vols) == 0 or vols.iloc[-1] == 0:
+                    zero_count += 1
+            return zero_count <= 1  # tolera 1 de 5 en cero, más que eso = sospechoso
+        except Exception:
+            return True  # si el chequeo en sí falla, no bloqueamos el flujo normal
+
     try:
-        raw = yf.download(
-            yf_symbols, period="1y", interval="1d",
-            auto_adjust=True, progress=False, threads=True,
-        )
+        raw = None
+        for attempt in range(3):
+            raw = yf.download(
+                yf_symbols, period="1y", interval="1d",
+                auto_adjust=True, progress=False, threads=True,
+            )
+            if _quality_ok(raw):
+                break
+            if attempt < 2:
+                time.sleep(2)
 
         for ticker, yf_sym in zip(ALL_TICKERS, yf_symbols):
             try:
