@@ -139,7 +139,16 @@ def _fetch_arg_equity(_cache_bucket=None):
         "returns": {"1S": None, "1M": None, "3M": None, "YTD": None, "12M": None},
     }
 
-    def _fetch_one(yf_sym):
+    # Corrección manual de splits que Yahoo/yfinance NO ajustó en su serie
+    # histórica (confirmado: el propio Yahoo Finance muestra el mismo retorno
+    # distorsionado en sus estadísticas de la acción). Formato: (fecha del
+    # split, ratio "nuevas por cada vieja"). Todo precio ANTERIOR a esa fecha
+    # se divide por el ratio.
+    _MANUAL_SPLITS = {
+        "ECOG": (pd.Timestamp("2025-08-20"), 10),  # VN10 -> 10x VN1, confirmado 20/08/2025
+    }
+
+    def _fetch_one(ticker, yf_sym):
         """Descarga UN ticker por separado (no batch) — evita el bug de yfinance
         donde un batch grande de símbolos devuelve datos incompletos para un
         subconjunto sin avisar. Reintenta una vez si viene vacío.
@@ -159,14 +168,22 @@ def _fetch_arg_equity(_cache_bucket=None):
                     hist = hist.iloc[:-1]
                     vol = hist["Volume"]
                 if len(hist) > 0:
-                    return hist["Close"].dropna(), hist["Volume"].dropna()
+                    closes  = hist["Close"].dropna()
+                    volumes = hist["Volume"].dropna()
+                    if ticker in _MANUAL_SPLITS:
+                        split_date, ratio = _MANUAL_SPLITS[ticker]
+                        split_date = split_date.tz_localize(closes.index.tz) if closes.index.tz else split_date
+                        pre_split = closes.index < split_date
+                        closes = closes.copy()
+                        closes.loc[pre_split] = closes.loc[pre_split] / ratio
+                    return closes, volumes
             except Exception:
                 pass
         return pd.Series(dtype=float), pd.Series(dtype=float)
 
     hist_by_ticker = {}
     with ThreadPoolExecutor(max_workers=10) as pool:
-        futures = {pool.submit(_fetch_one, sym): ticker for ticker, sym in zip(ALL_TICKERS, yf_symbols)}
+        futures = {pool.submit(_fetch_one, ticker, sym): ticker for ticker, sym in zip(ALL_TICKERS, yf_symbols)}
         for fut in as_completed(futures):
             hist_by_ticker[futures[fut]] = fut.result()
 
