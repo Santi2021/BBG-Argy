@@ -198,7 +198,7 @@ pre { background:#050505 !important; border:1px solid #222 !important; font-size
 [data-testid="stTabBar"] [data-baseweb="tab-list"] { background: transparent !important; }
 
 /* ── Selector de período (Radar, tab Argentina) — solo estos botones ── */
-.st-key-radar_period_buttons { max-width: 420px; }
+.st-key-radar_period_buttons { max-width: 420px; margin-top: 10px; margin-bottom: 4px; }
 .st-key-radar_period_buttons [data-testid="stHorizontalBlock"] { gap: 4px !important; }
 .st-key-radar_period_buttons [data-testid="baseButton-secondary"] {
     background: #000 !important;
