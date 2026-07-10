@@ -634,6 +634,17 @@ def _radar_table_simple(title, rows):
 </div>'''
 
 
+def _radar_row(html_left, html_right):
+    """Grid HTML puro para dos tablas lado a lado — mismo patrón que el grid de
+    SECTORES. No usa st.columns(): evita por completo el auto-stretch de altura
+    que Streamlit aplica a sus columnas nativas."""
+    return (
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:start">'
+        f'<div>{html_left}</div><div>{html_right}</div>'
+        '</div>'
+    )
+
+
 def _radar_section(title):
     st.markdown(
         f'<div style="color:#ff6600;font-size:12px;font-weight:bold;letter-spacing:2px;'
@@ -695,11 +706,10 @@ def _render_radar(quotes):
 
     # ── MOVERS DEL DÍA ──
     _radar_section("MOVERS DEL DÍA")
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown(_radar_table_simple("TOP 5 SUBEN HOY", movers_up), unsafe_allow_html=True)
-    with c2:
-        st.markdown(_radar_table_simple("TOP 5 BAJAN HOY", movers_down), unsafe_allow_html=True)
+    st.markdown(_radar_row(
+        _radar_table_simple("TOP 5 SUBEN HOY", movers_up),
+        _radar_table_simple("TOP 5 BAJAN HOY", movers_down),
+    ), unsafe_allow_html=True)
 
     # ── PERFORMANCE (selector de período) ──
     _radar_section("PERFORMANCE")
@@ -737,33 +747,24 @@ def _render_radar(quotes):
     perf_best  = sorted(perf_pool, key=lambda x: x[4], reverse=True)[:5]
     perf_worst = sorted(perf_pool, key=lambda x: x[4])[:5]
 
-    c3, c4 = st.columns(2)
-    with c3:
-        st.markdown(_radar_table(
-            f"TOP 5 MEJORES · {period_labels[period]}", perf_best, period, value_fmt=_fmt_pct_signed,
-        ), unsafe_allow_html=True)
-    with c4:
-        st.markdown(_radar_table(
-            f"TOP 5 PEORES · {period_labels[period]}", perf_worst, period, value_fmt=_fmt_pct_signed,
-        ), unsafe_allow_html=True)
+    st.markdown(_radar_row(
+        _radar_table(f"TOP 5 MEJORES · {period_labels[period]}", perf_best, period, value_fmt=_fmt_pct_signed),
+        _radar_table(f"TOP 5 PEORES · {period_labels[period]}", perf_worst, period, value_fmt=_fmt_pct_signed),
+    ), unsafe_allow_html=True)
 
     # ── FLUJOS DE VOLUMEN ──
     _radar_section("FLUJOS DE VOLUMEN")
-    c5, c6 = st.columns(2)
-    with c5:
-        st.markdown(_radar_table("VOLUMEN INUSUAL", spikes[:15], "HOY/PROM"), unsafe_allow_html=True)
-        st.markdown(
-            '<div style="color:#555;font-size:10px;margin-top:4px">'
-            'Monto de hoy vs. su propio promedio de 21 ruedas</div>',
-            unsafe_allow_html=True,
-        )
-    with c6:
-        st.markdown(_radar_table("ACUMULACIÓN DE VOLUMEN", trends[:15], "5D/16D"), unsafe_allow_html=True)
-        st.markdown(
-            '<div style="color:#555;font-size:10px;margin-top:4px">'
-            'Mediana de últimas 5 ruedas vs. promedio de las 16 previas</div>',
-            unsafe_allow_html=True,
-        )
+    volumen_inusual_html = (
+        _radar_table("VOLUMEN INUSUAL", spikes[:15], "HOY/PROM")
+        + '<div style="color:#555;font-size:10px;margin-top:4px">'
+          'Monto de hoy vs. su propio promedio de 21 ruedas</div>'
+    )
+    acumulacion_html = (
+        _radar_table("ACUMULACIÓN DE VOLUMEN", trends[:15], "5D/16D")
+        + '<div style="color:#555;font-size:10px;margin-top:4px">'
+          'Mediana de últimas 5 ruedas vs. promedio de las 16 previas</div>'
+    )
+    st.markdown(_radar_row(volumen_inusual_html, acumulacion_html), unsafe_allow_html=True)
 
     # ── EXTREMOS DE PRECIO — 52 SEMANAS ──
     _radar_section("EXTREMOS DE PRECIO — 52 SEMANAS")
@@ -772,15 +773,10 @@ def _render_radar(quotes):
         '¿Rompió esta semana (últimas 5 ruedas) el máximo/mínimo de todo lo anterior?</div>',
         unsafe_allow_html=True,
     )
-    c7, c8 = st.columns(2)
-    with c7:
-        st.markdown(_radar_table(
-            "NUEVOS MÁXIMOS 52 SEM.", new_highs[:8], "VS MAX PREVIO", value_fmt=_fmt_pct_signed,
-        ), unsafe_allow_html=True)
-    with c8:
-        st.markdown(_radar_table(
-            "NUEVOS MÍNIMOS 52 SEM.", new_lows[:8], "VS MIN PREVIO", value_fmt=_fmt_pct_signed,
-        ), unsafe_allow_html=True)
+    st.markdown(_radar_row(
+        _radar_table("NUEVOS MÁXIMOS 52 SEM.", new_highs[:8], "VS MAX PREVIO", value_fmt=_fmt_pct_signed),
+        _radar_table("NUEVOS MÍNIMOS 52 SEM.", new_lows[:8], "VS MIN PREVIO", value_fmt=_fmt_pct_signed),
+    ), unsafe_allow_html=True)
 
 
 def render():
