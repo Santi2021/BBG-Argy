@@ -198,14 +198,18 @@ pre { background:#050505 !important; border:1px solid #222 !important; font-size
 [data-testid="stTabBar"] [data-baseweb="tab-list"] { background: transparent !important; }
 
 /* ── Selector de período (Radar, tab Argentina) — solo estos botones ── */
+.st-key-radar_period_buttons { max-width: 420px; }
+.st-key-radar_period_buttons [data-testid="stHorizontalBlock"] { gap: 4px !important; }
 .st-key-radar_period_buttons [data-testid="baseButton-secondary"] {
     background: #000 !important;
     border: 1px solid #333 !important;
     color: #888 !important;
     font-family: 'Courier New', monospace !important;
-    font-size: 11px !important;
-    letter-spacing: 1px;
+    font-size: 10px !important;
+    letter-spacing: 0.5px;
     border-radius: 0 !important;
+    padding: 2px 6px !important;
+    min-height: 0 !important;
 }
 .st-key-radar_period_buttons [data-testid="baseButton-secondary"]:hover {
     border-color: #ff6600 !important;
@@ -216,10 +220,12 @@ pre { background:#050505 !important; border:1px solid #222 !important; font-size
     border: 1px solid #ff6600 !important;
     color: #ff6600 !important;
     font-family: 'Courier New', monospace !important;
-    font-size: 11px !important;
+    font-size: 10px !important;
     font-weight: bold;
-    letter-spacing: 1px;
+    letter-spacing: 0.5px;
     border-radius: 0 !important;
+    padding: 2px 6px !important;
+    min-height: 0 !important;
 }
 </style>
 """, unsafe_allow_html=True)
