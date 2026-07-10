@@ -87,15 +87,42 @@ def _prev_close_fallback(sym: str) -> float | None:
         return None
 
 
-@st.cache_data(ttl=300, show_spinner=False)
-def _fetch_arg_equity():
+def _radar_cache_bucket():
+    """Determina la 'ventana' de cache según el horario de Buenos Aires:
+
+    - 10:00–18:00 (mercado operando): bucket cambia cada 5 minutos, mismo
+      comportamiento de refresco que antes.
+    - 18:00–10:00 del día siguiente (mercado cerrado): el bucket queda FIJO
+      con la fecha de cierre correspondiente — es la "foto" del cierre, no
+      se vuelve a pedir nada a Yahoo hasta que abra de nuevo. Esto evita
+      pisar el dato bueno con ceros/NaN de la ventana de consolidación
+      post-cierre (~17:00–18:30), que es cuando Yahoo todavía no terminó
+      de fijar el precio/volumen final del día.
+    """
+    from zoneinfo import ZoneInfo
+    import datetime as _dt
+
+    tz = ZoneInfo("America/Argentina/Buenos_Aires")
+    now = _dt.datetime.now(tz)
+
+    if _dt.time(10, 0) <= now.time() < _dt.time(18, 0):
+        bucket_5min = (now.hour * 60 + now.minute) // 5
+        return f"live_{now.date()}_{bucket_5min}"
+    else:
+        # Si todavía no son las 18:00, la "foto" pendiente es la de AYER
+        # (recién cerrada); si ya pasaron las 18:00, es la de HOY.
+        close_date = now.date() if now.time() >= _dt.time(18, 0) else now.date() - _dt.timedelta(days=1)
+        return f"frozen_{close_date}"
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def _fetch_arg_equity(_cache_bucket=None):
     """Fetch all Argentine equity data via yfinance .BA tickers.
 
     Baja ~1 año de historial para poder calcular, además del monto operado
     promedio de 21 ruedas: máximos/mínimos de 52 semanas y retorno YTD.
-    TTL subido a 300s (5 min) porque bajar 1 año x 70 tickers cada 60s
-    es innecesariamente pesado — ninguno de estos indicadores necesita
-    actualizarse minuto a minuto.
+    El argumento _cache_bucket (ver _radar_cache_bucket) es lo que realmente
+    controla cuándo se refresca — el ttl=600 es solo un piso de seguridad.
     """
     import yfinance as yf
     import pandas as pd
@@ -753,7 +780,7 @@ def render():
     subtabs = st.tabs(["SECTORES", "HEATMAP", "RADAR"])
 
     with st.spinner(""):
-        quotes = _fetch_arg_equity()
+        quotes = _fetch_arg_equity(_radar_cache_bucket())
 
     with subtabs[0]:
         st.markdown(_market_kpi_html(quotes), unsafe_allow_html=True)
