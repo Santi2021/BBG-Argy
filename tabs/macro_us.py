@@ -438,7 +438,7 @@ def _render_gdp():
         marker=dict(symbol="diamond", size=7, color=WHITE),
         hovertemplate="<b>Total GDP</b>: %{y:+.2f}%<extra></extra>",
     ))
-    lay_gdp = _layout(440)
+    lay_gdp = _layout(520)
     lay_gdp["margin"] = dict(l=55, r=20, t=56, b=36)
     lay_gdp["legend"]["y"] = 1.0
     lay_gdp["legend"]["yanchor"] = "bottom"
@@ -453,7 +453,7 @@ def _render_gdp():
             unsafe_allow_html=True
         )
     def _drill_layout():
-        lay = _layout(300)
+        lay = _layout(340)
         lay["margin"] = dict(l=55, r=20, t=36, b=36)
         lay["legend"] = dict(
             bgcolor="rgba(0,0,0,0)",
@@ -649,7 +649,7 @@ def _render_labor():
             hovertemplate="<b>Government</b>: %{y:+,.0f}K<extra></extra>",
         ))
     fig1.add_hline(y=0, line_color="#333", line_width=1)
-    lay1 = _layout(380)
+    lay1 = _layout(440)
     lay1["xaxis"]["rangeselector"] = _rangeselector()
     lay1["margin"] = dict(l=55, r=20, t=54, b=36)
     fig1.update_layout(**lay1)
@@ -700,7 +700,7 @@ def _render_labor():
             hovertemplate="<b>Total NFP</b>: %{y:+.0f}K<extra></extra>",
         ))
     fig_sec.add_hline(y=0, line_color="#333", line_width=1)
-    lay_sec = _layout(420)
+    lay_sec = _layout(480)
     lay_sec["barmode"] = "relative"
     lay_sec["margin"] = dict(l=55, r=20, t=72, b=36)
     lay_sec["legend"] = dict(
@@ -786,7 +786,7 @@ def _render_labor():
         line=dict(color=CYAN, width=2),
         hovertemplate="<b>Participation</b>: %{y:.1f}%<extra></extra>",
     ), secondary_y=True)
-    fig3.update_layout(**_layout_sub(340))
+    fig3.update_layout(**_layout_sub(380))
     _style_sub_axes(fig3)
     st.plotly_chart(fig3, use_container_width=True, config=PLOTLY_CFG)
     _sec("AVERAGE HOURLY EARNINGS — YoY %")
@@ -796,7 +796,7 @@ def _render_labor():
         line=dict(color=AMBER, width=2.5),
         hovertemplate="<b>Wages YoY</b>: %{y:.2f}%<extra></extra>",
     ))
-    lay4 = _layout(240)
+    lay4 = _layout(280)
     lay4['yaxis']['autorange'] = True
     lay4['yaxis']['rangemode'] = 'normal'
     fig4.update_layout(**lay4)
@@ -839,7 +839,7 @@ def _render_labor():
                     mode="markers", marker=dict(symbol="star",size=14,color=CYAN),
                     hovertemplate=f"<b>Latest</b>: {common_idx[-1].strftime('%b %Y')}<extra></extra>",
                 ))
-                lb = _layout(400)
+                lb = _layout(440)
                 lb["hovermode"] = "closest"
                 lb["showlegend"] = False
                 fig_b.update_layout(**lb)
@@ -856,7 +856,7 @@ def _render_labor():
                     line=dict(color=color, width=2),
                     hovertemplate=f"<b>{name}</b>: %{{y:.2f}}M<extra></extra>",
                 ))
-            fig_fl.update_layout(**_layout(340))
+            fig_fl.update_layout(**_layout(380))
             st.plotly_chart(fig_fl, use_container_width=True, config=PLOTLY_CFG)
         with jtabs[2]:
             common_idx2 = openings.index.intersection(unemp.index).sort_values()
@@ -873,7 +873,7 @@ def _render_labor():
                 line=dict(color=RED, width=2, dash="dot"),
                 hovertemplate="<b>Unemployment</b>: %{y:.1f}%<extra></extra>",
             ), secondary_y=True)
-            fig_ov.update_layout(**_layout_sub(320))
+            fig_ov.update_layout(**_layout_sub(360))
             _style_sub_axes(fig_ov)
             st.plotly_chart(fig_ov, use_container_width=True, config=PLOTLY_CFG)
     st.markdown(f'<div style="color:{MUTED};font-size:9px;margin-top:6px;font-family:\'Courier New\',monospace">Sources: BLS CES (payrolls, wages) · BLS CPS (unemployment, participation) · FRED JOLTS</div>', unsafe_allow_html=True)
@@ -952,7 +952,7 @@ def _render_inflation():
                 line=dict(color=color, width=2, dash=dash),
                 hovertemplate=f"<b>{name}</b>: %{{y:.2f}}%<extra></extra>",
             ))
-    lay1 = _layout(360)
+    lay1 = _layout(420)
     lay1["xaxis"]["rangeselector"] = _rangeselector()
     lay1["margin"] = dict(l=55, r=20, t=54, b=36)
     fig1.update_layout(**lay1)
@@ -1010,7 +1010,7 @@ def _render_inflation():
             mode="lines", line=dict(color=WHITE, width=2),
             hovertemplate="<b>CPI Total</b>: %{y:.2f}%<extra></extra>",
         ))
-        l2 = _layout(380)
+        l2 = _layout(420)
         fig2.update_layout(**l2)
         st.plotly_chart(fig2, use_container_width=True, config=PLOTLY_CFG)
     _sec("SHELTER vs CORE EX-SHELTER — YoY %")
@@ -1029,7 +1029,7 @@ def _render_inflation():
                 line=dict(color=color, width=2, dash=dash),
                 hovertemplate=f"<b>{name}</b>: %{{y:.2f}}%<extra></extra>",
             ))
-    fig3.update_layout(**_layout(300))
+    fig3.update_layout(**_layout(340))
     st.plotly_chart(fig3, use_container_width=True, config=PLOTLY_CFG)
     _sec("INFLATION EXPECTATIONS — TIPS BREAKEVENS & MICHIGAN SURVEY")
     exp_tabs = st.tabs(["TIPS Breakevens", "Michigan Survey"])
@@ -1046,7 +1046,7 @@ def _render_inflation():
                     line=dict(color=color, width=2, dash=dash),
                     hovertemplate=f"<b>{name}</b>: %{{y:.2f}}%<extra></extra>",
                 ))
-        fig4a.update_layout(**_layout(260))
+        fig4a.update_layout(**_layout(300))
         st.plotly_chart(fig4a, use_container_width=True, config=PLOTLY_CFG)
     with exp_tabs[1]:
         fig4b = go.Figure()
@@ -1061,7 +1061,7 @@ def _render_inflation():
                     line=dict(color=color, width=2),
                     hovertemplate=f"<b>{name}</b>: %{{y:.2f}}%<extra></extra>",
                 ))
-        fig4b.update_layout(**_layout(260))
+        fig4b.update_layout(**_layout(300))
         st.plotly_chart(fig4b, use_container_width=True, config=PLOTLY_CFG)
     st.markdown(f'<div style="color:{MUTED};font-size:9px;margin-top:8px;font-family:\'Courier New\',monospace">Sources: BLS (CPI CUUR series) · FRED (PCE, TIPS breakevens, Michigan Survey)</div>', unsafe_allow_html=True)
 
@@ -1382,7 +1382,7 @@ def _render_fedwatch():
         annotation_font=dict(size=8, color=AMBER, family="'Courier New',monospace"),
         annotation_position="bottom right",
     )
-    lay_fw = _layout(310)
+    lay_fw = _layout(360)
     lay_fw["margin"]             = dict(l=55, r=20, t=30, b=80)
     lay_fw["xaxis"]["tickangle"] = -40
     lay_fw["xaxis"]["showgrid"]  = True
@@ -1482,7 +1482,7 @@ def _render_fedwatch():
             ),
         ))
     if has_data:
-        lay_h = _layout(310)
+        lay_h = _layout(360)
         lay_h["margin"]              = dict(l=55, r=20, t=30, b=80)
         lay_h["xaxis"]["tickangle"]  = -40
         lay_h["xaxis"]["showgrid"]   = True
@@ -1623,7 +1623,7 @@ def _render_rates():
                         marker=dict(size=5, color=color),
                         hovertemplate=f"<b>{label}</b> %{{x}}: %{{y:.2f}}%<extra></extra>",
                     ))
-            lay_yc = _layout(340)
+            lay_yc = _layout(380)
             lay_yc["margin"] = dict(l=55, r=20, t=36, b=36)
             lay_yc["xaxis"]["showgrid"] = True
             lay_yc["xaxis"]["gridcolor"] = GRID
@@ -1673,7 +1673,7 @@ def _render_rates():
                     fig_yh.add_trace(go.Scatter(name=name, x=s.index, y=s.values,
                         line=dict(color=color, width=2, dash=dash),
                         hovertemplate=f"<b>{name}</b>: %{{y:.2f}}%<extra></extra>"))
-            lay_yh = _layout(360); lay_yh["margin"] = dict(l=55, r=20, t=54, b=36)
+            lay_yh = _layout(420); lay_yh["margin"] = dict(l=55, r=20, t=54, b=36)
             lay_yh["xaxis"]["rangeselector"] = _rangeselector()
             fig_yh.update_layout(**lay_yh)
             st.plotly_chart(fig_yh, use_container_width=True, config=PLOTLY_CFG)
@@ -1691,7 +1691,7 @@ def _render_rates():
                         line=dict(color=color, width=2),
                         fill="tozeroy", fillcolor=f"rgba({int(color[1:3],16)},{int(color[3:5],16)},{int(color[5:7],16)},0.06)",
                         hovertemplate=f"<b>{name}</b>: %{{y:+.2f}}%<extra></extra>"))
-            lay_sp = _layout(280); lay_sp["margin"] = dict(l=55, r=20, t=36, b=36)
+            lay_sp = _layout(320); lay_sp["margin"] = dict(l=55, r=20, t=36, b=36)
             fig_sp.update_layout(**lay_sp)
             st.plotly_chart(fig_sp, use_container_width=True, config=PLOTLY_CFG)
     with rtabs[1]:
@@ -1719,7 +1719,7 @@ def _render_rates():
                     line=dict(color=color, width=width, dash=dash),
                     hovertemplate=f"<b>{name}</b>: %{{y:.2f}}%<extra></extra>"),
                     secondary_y=False)
-        lay_c = _layout_sub(360)
+        lay_c = _layout_sub(420)
         lay_c["margin"] = dict(l=55, r=20, t=36, b=36)
         fig_corr.update_layout(**lay_c)
         _style_sub_axes(fig_corr)
@@ -1738,7 +1738,7 @@ def _render_rates():
                     line=dict(color=color, width=2, dash=dash),
                     hovertemplate=f"<b>{name}</b>: %{{y:.2f}}%<extra></extra>"))
         fig_rr.add_hline(y=0, line_color="#333", line_width=1)
-        lay_rr = _layout(280); lay_rr["margin"] = dict(l=55, r=20, t=36, b=36)
+        lay_rr = _layout(320); lay_rr["margin"] = dict(l=55, r=20, t=36, b=36)
         fig_rr.update_layout(**lay_rr)
         st.plotly_chart(fig_rr, use_container_width=True, config=PLOTLY_CFG)
         _sec("MORTGAGE 30Y vs FED FUNDS · USD INDEX")
@@ -1754,7 +1754,7 @@ def _render_rates():
                     line=dict(color=color, width=2, dash=dash),
                     hovertemplate=f"<b>{name}</b>: %{{y:.2f}}<extra></extra>"),
                     secondary_y=sec_y)
-        lay_tr = _layout_sub(300); lay_tr["margin"] = dict(l=55, r=55, t=36, b=36)
+        lay_tr = _layout_sub(340); lay_tr["margin"] = dict(l=55, r=55, t=36, b=36)
         fig_tr.update_layout(**lay_tr)
         _style_sub_axes(fig_tr)
         st.plotly_chart(fig_tr, use_container_width=True, config=PLOTLY_CFG)
@@ -1782,7 +1782,7 @@ def _render_rates():
                 fig_cr.add_trace(go.Scatter(name=name, x=s.index, y=s.values,
                     line=dict(color=color, width=2, dash=dash),
                     hovertemplate=f"<b>{name}</b>: %{{y:.0f}}bp<extra></extra>"))
-        lay_cr = _layout(340); lay_cr["margin"] = dict(l=55, r=20, t=36, b=36)
+        lay_cr = _layout(380); lay_cr["margin"] = dict(l=55, r=20, t=36, b=36)
         fig_cr.update_layout(**lay_cr)
         st.plotly_chart(fig_cr, use_container_width=True, config=PLOTLY_CFG)
         _sec("FINANCIAL CONDITIONS — NFCI · VIX")
@@ -1806,7 +1806,7 @@ def _render_rates():
             fig_nf.add_trace(go.Scatter(name="VIX", x=vix_t.index, y=vix_t.values,
                 line=dict(color=CYAN, width=1.5, dash="dot"),
                 hovertemplate="<b>VIX</b>: %{y:.1f}<extra></extra>"), secondary_y=True)
-        lay_nf = _layout_sub(300)
+        lay_nf = _layout_sub(340)
         lay_nf["barmode"] = "overlay"
         lay_nf["margin"]  = dict(l=55, r=55, t=36, b=36)
         fig_nf.update_layout(**lay_nf)
