@@ -227,6 +227,76 @@ pre { background:#050505 !important; border:1px solid #222 !important; font-size
     padding: 2px 6px !important;
     min-height: 0 !important;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   JERARQUÍA DE TABS ANIDADOS (nuevo)
+   El nivel 1 (fila de arriba: OVERVIEW/ARGENTINA/.../MACRO US) queda igual.
+   A partir de acá se diferencian los niveles anidados por profundidad real
+   de DOM (stTabsContent dentro de stTabsContent), sin tocar Python.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* Nivel 2 — ej. GDP / LABOR / INFLATION / RATES: más grande y espaciado */
+[data-testid="stTabsContent"] [data-testid="stTabBar"] button {
+    font-size: 12px !important;
+    padding: 6px 16px !important;
+    height: 32px !important;
+    letter-spacing: 1.2px !important;
+}
+
+/* Nivel 3 — ej. YIELD CURVE/FED CORRIDOR/..., drill-downs, JOLTS deep dive:
+   toolbar tipo pill en su propio contenedor, ya no parece "otro tab más" */
+[data-testid="stTabsContent"] [data-testid="stTabsContent"] [data-testid="stTabBar"] {
+    display: inline-flex !important;
+    width: auto !important;
+    background: #0a0a0a !important;
+    border: 1px solid #222 !important;
+    border-radius: 8px !important;
+    padding: 3px !important;
+    gap: 2px !important;
+    margin-bottom: 4px !important;
+}
+[data-testid="stTabsContent"] [data-testid="stTabsContent"] [data-testid="stTabBar"] button {
+    font-size: 10px !important;
+    padding: 5px 11px !important;
+    height: auto !important;
+    border-radius: 5px !important;
+    border-bottom: none !important;
+    color: #777 !important;
+}
+[data-testid="stTabsContent"] [data-testid="stTabsContent"] [data-testid="stTabBar"] button:hover {
+    background: #111 !important; color: #ccc !important;
+}
+[data-testid="stTabsContent"] [data-testid="stTabsContent"] [data-testid="stTabBar"] button[aria-selected="true"] {
+    background: rgba(255,102,0,0.14) !important;
+    border-bottom: none !important;
+    color: #ff6600 !important;
+}
+
+/* Nivel 4 — ej. Snapshot/History/Spreads dentro de YIELD CURVE:
+   el nivel más chico, formato de link subrayado, sin caja */
+[data-testid="stTabsContent"] [data-testid="stTabsContent"] [data-testid="stTabsContent"] [data-testid="stTabBar"] {
+    background: transparent !important;
+    border: none !important;
+    padding: 0 !important;
+    gap: 14px !important;
+    display: flex !important;
+}
+[data-testid="stTabsContent"] [data-testid="stTabsContent"] [data-testid="stTabsContent"] [data-testid="stTabBar"] button {
+    font-size: 9px !important;
+    padding: 2px 0 4px 0 !important;
+    color: #555 !important;
+    background: transparent !important;
+}
+[data-testid="stTabsContent"] [data-testid="stTabsContent"] [data-testid="stTabsContent"] [data-testid="stTabBar"] button[aria-selected="true"] {
+    background: transparent !important;
+    color: #ff6600 !important;
+    border-bottom: 2px solid #ff6600 !important;
+}
+
+/* Plotly modebar — visible pero discreto (zoom / pan / reset / descargar PNG) */
+.modebar { background: rgba(0,0,0,0.35) !important; }
+.modebar-btn path { fill: #666 !important; }
+.modebar-btn:hover path { fill: #ff6600 !important; }
 </style>
 """, unsafe_allow_html=True)
 
