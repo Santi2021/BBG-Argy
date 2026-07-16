@@ -75,7 +75,12 @@ def _rangeselector():
         activecolor="rgba(255,102,0,0.18)",
         bordercolor="#222",
         borderwidth=1,
-        x=1, xanchor="right", y=1.16, yanchor="top",
+        # Anclado a la IZQUIERDA a propósito: la modebar de Plotly (cámara,
+        # zoom, home, etc.) vive siempre arriba a la derecha del área del
+        # gráfico y no es reposicionable — si el selector de rango también
+        # se ancla a la derecha, se pisan. Poniéndolo a la izquierda nunca
+        # compiten por el mismo espacio, sea cual sea el ancho del chart.
+        x=0, xanchor="left", y=1.22, yanchor="top",
     )
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -639,7 +644,7 @@ def _render_labor():
         fig1.add_hline(y=0, line_color="#333", line_width=1)
         lay1 = _layout(440)
         lay1["xaxis"]["rangeselector"] = _rangeselector()
-        lay1["margin"] = dict(l=55, r=20, t=54, b=36)
+        lay1["margin"] = dict(l=55, r=20, t=92, b=36)
         fig1.update_layout(**lay1)
         st.plotly_chart(fig1, use_container_width=True, config=PLOTLY_CFG)
     with view_tabs[1]:
@@ -657,7 +662,7 @@ def _render_labor():
         fig1b.add_hline(y=0, line_color="#333", line_width=1)
         lay1b = _layout(440)
         lay1b["xaxis"]["rangeselector"] = _rangeselector()
-        lay1b["margin"] = dict(l=55, r=20, t=54, b=36)
+        lay1b["margin"] = dict(l=55, r=20, t=92, b=36)
         fig1b.update_layout(**lay1b)
         st.plotly_chart(fig1b, use_container_width=True, config=PLOTLY_CFG)
     _sec("NONFARM PAYROLLS — SECTOR BREAKDOWN")
@@ -961,7 +966,7 @@ def _render_inflation():
             ))
     lay1 = _layout(420)
     lay1["xaxis"]["rangeselector"] = _rangeselector()
-    lay1["margin"] = dict(l=55, r=20, t=54, b=36)
+    lay1["margin"] = dict(l=55, r=20, t=92, b=36)
     fig1.update_layout(**lay1)
     st.plotly_chart(fig1, use_container_width=True, config=PLOTLY_CFG)
     _sec("CPI COMPONENT CONTRIBUTIONS")
@@ -1067,7 +1072,7 @@ def _render_inflation():
                 ))
         lay4a = _layout(340)
         lay4a["xaxis"]["rangeselector"] = _rangeselector()
-        lay4a["margin"] = dict(l=55, r=20, t=54, b=36)
+        lay4a["margin"] = dict(l=55, r=20, t=92, b=36)
         fig4a.update_layout(**lay4a)
         st.plotly_chart(fig4a, use_container_width=True, config=PLOTLY_CFG)
     with exp_tabs[1]:
@@ -1695,7 +1700,7 @@ def _render_rates():
                     fig_yh.add_trace(go.Scatter(name=name, x=s.index, y=s.values,
                         line=dict(color=color, width=2, dash=dash),
                         hovertemplate=f"<b>{name}</b>: %{{y:.2f}}%<extra></extra>"))
-            lay_yh = _layout(420); lay_yh["margin"] = dict(l=55, r=20, t=54, b=36)
+            lay_yh = _layout(420); lay_yh["margin"] = dict(l=55, r=20, t=92, b=36)
             lay_yh["xaxis"]["rangeselector"] = _rangeselector()
             fig_yh.update_layout(**lay_yh)
             st.plotly_chart(fig_yh, use_container_width=True, config=PLOTLY_CFG)
