@@ -49,7 +49,7 @@ def _render_calendar_html(records: list, market: str) -> str:
     import re, pandas as pd
 
     if not records:
-        return f'<p style="color:{MUTED};font-family:\'Courier New\',monospace;padding:20px;font-size:10px">Sin eventos para esta semana.</p>'
+        return f'<p style="color:{MUTED};font-family:\'Courier New\',monospace;padding:20px;font-size:12px">Sin eventos para esta ventana (ayer / hoy / mañana).</p>'
 
     T          = "font-family:'Courier New',monospace;"
     cat_colors = CAT_COLORS_US if market == "US" else CAT_COLORS_ARG
@@ -67,13 +67,13 @@ def _render_calendar_html(records: list, market: str) -> str:
             pass
 
     TH = (
-        f"padding:3px 10px;{T}font-size:8px;color:#444;"
+        f"padding:4px 10px;{T}font-size:10px;color:#666;"
         "background:#0a0a0a;border-bottom:1px solid #1a1a1a;"
         "border-right:1px solid #111;text-align:left;"
         "letter-spacing:1px;white-space:nowrap;"
     )
     TD_BASE = (
-        f"padding:4px 10px;{T}font-size:10px;"
+        f"padding:5px 10px;{T}font-size:12px;"
         "border-bottom:1px solid #0d0d0d;"
         "border-right:1px solid #0a0a0a;"
         "vertical-align:middle;white-space:nowrap;"
@@ -83,25 +83,25 @@ def _render_calendar_html(records: list, market: str) -> str:
     css = f"""
     <style>
       .eco-wrap    {{ background:{BG}; padding:8px 4px; }}
-      .eco-hdr     {{ color:{ORANGE}; font-size:10px; font-weight:bold; letter-spacing:3px;
+      .eco-hdr     {{ color:{ORANGE}; font-size:12px; font-weight:bold; letter-spacing:3px;
                      text-transform:uppercase; border-bottom:2px solid {ORANGE};
-                     padding-bottom:5px; margin-bottom:14px; {T}
+                     padding-bottom:6px; margin-bottom:16px; {T}
                      display:flex; justify-content:space-between; align-items:flex-end; }}
-      .eco-range   {{ color:{MUTED}; font-size:9px; letter-spacing:1px; }}
-      .eco-day-blk {{ margin-bottom:18px; }}
-      .eco-day-hdr {{ color:{GOLD}; font-size:9px; font-weight:bold; letter-spacing:2px;
+      .eco-range   {{ color:#999; font-size:11px; letter-spacing:1px; }}
+      .eco-day-blk {{ margin-bottom:20px; }}
+      .eco-day-hdr {{ color:{GOLD}; font-size:11px; font-weight:bold; letter-spacing:2px;
                      text-transform:uppercase; border-bottom:1px solid #222;
-                     padding:7px 0 3px 0; margin-bottom:0; {T}
+                     padding:8px 0 4px 0; margin-bottom:0; {T}
                      display:flex; justify-content:space-between; align-items:center; }}
-      .eco-day-cnt {{ color:{MUTED}; font-size:8px; font-weight:normal; }}
+      .eco-day-cnt {{ color:#888; font-size:10px; font-weight:normal; }}
       .eco-tbl     {{ border-collapse:collapse; width:100%; }}
       .eco-r3      {{ background:#0d0000; }}
       .eco-r2      {{ background:#080808; }}
       .eco-r1      {{ background:{BG}; }}
       .eco-r3:hover,.eco-r2:hover,.eco-r1:hover {{ background:#111; }}
-      .eco-legend  {{ display:flex; gap:14px; margin-top:10px; padding-top:7px;
+      .eco-legend  {{ display:flex; gap:16px; margin-top:12px; padding-top:8px;
                      border-top:1px solid #1a1a1a; flex-wrap:wrap; }}
-      .eco-leg-itm {{ font-size:8px; {T} color:{MUTED}; }}
+      .eco-leg-itm {{ font-size:10px; {T} color:#888; }}
     </style>
     """
 
@@ -136,7 +136,18 @@ def _render_calendar_html(records: list, market: str) -> str:
         # Header del día
         try:
             dt        = pd.Timestamp(date)
+            today_ts  = pd.Timestamp.today().normalize()
+            if dt.normalize() == today_ts:
+                day_tag = "HOY"
+            elif dt.normalize() == today_ts - pd.Timedelta(days=1):
+                day_tag = "AYER"
+            elif dt.normalize() == today_ts + pd.Timedelta(days=1):
+                day_tag = "MAÑANA"
+            else:
+                day_tag = ""
             day_label = dt.strftime("%A").upper() + "  ·  " + dt.strftime("%d %b %Y").upper()
+            if day_tag:
+                day_label = f"{day_tag}  ·  {day_label}"
         except Exception:
             day_label = str(date).upper()
 
@@ -184,13 +195,13 @@ def _render_calendar_html(records: list, market: str) -> str:
                 fc_cell = f'<span style="color:{MUTED}">{forecast}</span>'
 
             html += f'<tr class="{row_cls}">'
-            html += f'<td style="{TD_BASE}color:{MUTED};font-size:9px">{time_et}</td>'
+            html += f'<td style="{TD_BASE}color:#999;font-size:11px">{time_et}</td>'
             html += f'<td style="{TD_BASE}color:{imp_color};font-weight:bold;text-align:center">{imp_dots}</td>'
-            html += f'<td style="{TD_BASE}color:{cat_color};font-size:8px;font-weight:bold;letter-spacing:1px">{cat_short}</td>'
+            html += f'<td style="{TD_BASE}color:{cat_color};font-size:10px;font-weight:bold;letter-spacing:1px">{cat_short}</td>'
             html += f'<td style="{TD_BASE}color:{TEXT};max-width:360px;overflow:hidden;text-overflow:ellipsis">{event_name}</td>'
-            html += f'<td style="{TD_BASE}color:{CYAN};font-size:9px">{period}</td>'
+            html += f'<td style="{TD_BASE}color:{CYAN};font-size:11px">{period}</td>'
             html += f'<td style="{TD_BASE}text-align:right">{fc_cell}</td>'
-            html += f'<td style="{TD_BASE}color:{MUTED};text-align:right">{previous}</td>'
+            html += f'<td style="{TD_BASE}color:#999;text-align:right">{previous}</td>'
             html += "</tr>"
 
         html += "</tbody></table></div>"
@@ -248,7 +259,7 @@ def render():
 
     def _btn_css(is_active):
         bg    = "#0a0000" if is_active else "#000"
-        color = ORANGE    if is_active else "#444"
+        color = ORANGE    if is_active else "#777"
         bb    = f"2px solid {ORANGE}" if is_active else "2px solid transparent"
         return (
             f"background:{bg} !important;"
@@ -259,11 +270,11 @@ def render():
             f"border-bottom:{bb} !important;"
             f"border-radius:0 !important;"
             f"font-family:'Courier New',monospace !important;"
-            f"font-size:9px !important;"
+            f"font-size:11px !important;"
             f"font-weight:bold !important;"
             f"letter-spacing:2px !important;"
             f"padding:0 18px !important;"
-            f"height:30px !important;"
+            f"height:34px !important;"
             f"width:100% !important;"
         )
 
@@ -282,7 +293,7 @@ def render():
     </style>
     <div style="display:flex;align-items:center;background:#000;
                 border-bottom:1px solid #222;padding-left:4px;margin-bottom:2px;">
-      <span style="color:#333;font-size:8px;letter-spacing:2px;
+      <span style="color:#555;font-size:10px;letter-spacing:2px;
                    font-family:'Courier New',monospace;padding:0 12px 0 4px;
                    border-right:1px solid #1a1a1a;margin-right:0;">
         ECO CAL
@@ -310,36 +321,35 @@ def render():
     # ── Errores no-fatales ────────────────────────────────────────────────────
     if us_err and active == "US":
         st.markdown(
-            f'<p style="color:{MUTED};font-family:Courier New;font-size:9px">'
+            f'<p style="color:{MUTED};font-family:Courier New;font-size:11px">'
             f'US calendar error: {us_data["error"]}</p>',
             unsafe_allow_html=True
         )
     if arg_err and active == "ARG":
         st.markdown(
-            f'<p style="color:{MUTED};font-family:Courier New;font-size:9px">'
+            f'<p style="color:{MUTED};font-family:Courier New;font-size:11px">'
             f'ARG calendar error: {arg_data["error"]}</p>',
             unsafe_allow_html=True
         )
 
     # ── Footer ────────────────────────────────────────────────────────────────
     st.markdown(
-        f'<div style="color:{MUTED};font-size:8px;font-family:Courier New;'
+        f'<div style="color:#888;font-size:10px;font-family:Courier New;'
         f'padding:8px 4px;border-top:1px solid #1a1a1a;margin-top:4px;">'
         f'FUENTE: INVESTING.COM · ACTUALIZACIÓN CADA 60 MIN · '
-        f'SEMANA: {_week_label()}'
+        f'VENTANA: {_week_label()}'
         f'</div>',
         unsafe_allow_html=True
     )
 
 
 def _week_label() -> str:
-    """Lunes–Viernes de la semana que muestra el calendario."""
+    """Ayer · Hoy · Mañana — ventana de 3 días que muestra el calendario."""
     from datetime import datetime, timedelta
-    today = datetime.today()
-    wd    = today.weekday()
-    if wd >= 5:
-        monday = today + timedelta(days=(7 - wd))
-    else:
-        monday = today - timedelta(days=wd)
-    friday = monday + timedelta(days=4)
-    return f"{monday.strftime('%d %b')} – {friday.strftime('%d %b %Y')}".upper()
+    today     = datetime.today()
+    yesterday = today - timedelta(days=1)
+    tomorrow  = today + timedelta(days=1)
+    return (
+        f"AYER {yesterday.strftime('%d %b')} · HOY {today.strftime('%d %b')} · "
+        f"MAÑANA {tomorrow.strftime('%d %b %Y')}"
+    ).upper()
