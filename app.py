@@ -111,9 +111,9 @@ div[data-testid="stAppViewBlockContainer"] { padding-top: 0 !important; }
 [data-testid="stTab"][aria-selected="true"] {
     color: #ff6600 !important; border-bottom: 2px solid #ff6600 !important;
 }
-[data-testid="stTabPanel"] { background: #000 !important; padding: 4px 4px !important; }
+[data-testid="stTabPanel"] { background: #000 !important; padding: 4px 4px !important; width: 100% !important; }
 
-[data-testid="stVerticalBlock"] > [data-testid="stVerticalBlockBorderWrapper"]:first-child {
+[data-testid="stVerticalBlock"][data-test-scroll-behavior="normal"]:first-child {
     margin-top: 0 !important; padding-top: 0 !important;
 }
 
@@ -248,10 +248,18 @@ pre { background:#050505 !important; border:1px solid #222 !important; font-size
 }
 
 /* Nivel 3 — ej. YIELD CURVE/FED CORRIDOR/..., drill-downs, JOLTS deep dive:
-   toolbar tipo pill en su propio contenedor, ya no parece "otro tab más" */
+   toolbar tipo pill en su propio contenedor, ya no parece "otro tab más".
+   BUG encontrado en vivo (inspección de DOM): "width: auto" acá encogía
+   TODO el panel de contenido (el gráfico) al ancho de los botones, porque
+   stTabs es ancestro directo del stTabPanel donde vive el chart — Plotly
+   terminaba renderizando a su default de 700px. Ahora el contenedor va al
+   100% (no se ve "estirado" porque cada botón individual no crece, solo
+   quedan pegados a la izquierda vía justify-content) y los botones siguen
+   viéndose como pill compacto. */
 [data-testid="stTabPanel"] [data-testid="stTabPanel"] [data-testid="stTabs"] {
-    display: inline-flex !important;
-    width: auto !important;
+    display: flex !important;
+    width: 100% !important;
+    justify-content: flex-start !important;
     background: #0a0a0a !important;
     border: 1px solid #222 !important;
     border-radius: 8px !important;
@@ -303,38 +311,24 @@ pre { background:#050505 !important; border:1px solid #222 !important; font-size
 .modebar-btn:hover path { fill: #ff6600 !important; }
 
 /* Recuadro de sección — st.container(border=True) usado en macro_us.py para
-   separar visualmente cada bloque de gráfico (pedido explícito: "recuadro
-   como hay en el segundo cuadro"). Se sobreescribe el estilo default de
-   Streamlit (gris claro, esquinas muy redondeadas) para que combine con la
-   estética BBG oscura del resto de la terminal. */
-[data-testid="stVerticalBlockBorderWrapper"] {
+   separar visualmente cada bloque de gráfico ("recuadro como hay en el
+   segundo cuadro"). IMPORTANTE (confirmado inspeccionando el DOM en vivo):
+   esta versión de Streamlit NO usa un testid separado tipo
+   "stVerticalBlockBorderWrapper" (ese selector no existe y por eso el
+   recuadro nunca se veía con estilo propio) — el borde se aplica
+   directamente sobre el propio [data-testid="stVerticalBlock"], y el único
+   indicador confiable para distinguir "este bloque tiene border=True" de
+   uno normal es el atributo data-test-scroll-behavior, que Streamlit solo
+   agrega cuando el container se creó con border=True. */
+[data-testid="stVerticalBlock"][data-test-scroll-behavior="normal"] {
     border: 1px solid #2a2a2a !important;
     border-radius: 6px !important;
     background: #050505 !important;
     padding: 10px 14px 6px 14px !important;
     margin-bottom: 14px !important;
-    width: 100% !important;
-    display: block !important;
 }
-[data-testid="stVerticalBlockBorderWrapper"]:hover {
+[data-testid="stVerticalBlock"][data-test-scroll-behavior="normal"]:hover {
     border-color: #3a3a3a !important;
-}
-/* FIX ancho: cuando el recuadro contiene un st.tabs() (Total/Priv-Govt,
-   YoY/MoM, TIPS/Michigan, etc.), Streamlit encoge el bloque completo al
-   ancho de la barra de tabs (que a propósito es angosta — ver estilos
-   "Nivel 3/4" más arriba) en vez de estirarlo al 100%. Esto fuerza el
-   ancho completo en el CONTENEDOR/BLOQUE sin tocar el ancho de la barra
-   de tabs en sí (que debe seguir viéndose como pill/link compacto). */
-[data-testid="stVerticalBlockBorderWrapper"] > div,
-[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stVerticalBlock"],
-[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stElementContainer"],
-[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stTabPanel"] {
-    width: 100% !important;
-}
-[data-testid="stVerticalBlockBorderWrapper"] .js-plotly-plot,
-[data-testid="stVerticalBlockBorderWrapper"] .plot-container,
-[data-testid="stVerticalBlockBorderWrapper"] .main-svg {
-    width: 100% !important;
 }
 </style>
 """, unsafe_allow_html=True)
