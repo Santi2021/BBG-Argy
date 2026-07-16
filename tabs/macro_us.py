@@ -482,14 +482,10 @@ def _render_gdp():
     st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CFG)
     _sec("DRILL-DOWN")
     dtabs = st.tabs(["Consumption", "Investment", "Government", "Net Exports", "Final Sales"])
-    def _sub(text):
-        # Antes color:#777 sobre fondo negro — se leía como "puntitos blancos",
-        # casi invisible en pantalla. Subido a #aaa + 12px para que se lea bien.
-        st.markdown(
-            f'<div style="font-family:Courier New,monospace;font-size:12px;'
-            f'color:#aaa;margin:4px 0 0 0;padding:0;line-height:1.4">{text}</div>',
-            unsafe_allow_html=True
-        )
+    # Nota: se sacó el subtítulo tipo "Durables · Nondurables · Services..."
+    # que iba arriba de cada gráfico — quedaba pegado a la leyenda del propio
+    # chart (que ya muestra esos mismos nombres con su color), era 100%
+    # repetido y encima se leía mal por el tamaño de fuente.
     def _drill_layout():
         lay = _layout(340)
         lay["margin"] = dict(l=55, r=20, t=36, b=36)
@@ -502,7 +498,6 @@ def _render_gdp():
         )
         return lay
     with dtabs[0]:
-        _sub("Durables &nbsp;&middot;&nbsp; Nondurables &nbsp;&middot;&nbsp; Services &nbsp;&nbsp; ◆ = Total PCE contribution")
         fig = _stacked_fig([
             ("Durables",    _gs(df,GDP_CODES["durables"]),    GDP_COLORS["durables"]),
             ("Nondurables", _gs(df,GDP_CODES["nondurables"]), GDP_COLORS["nondurables"]),
@@ -512,7 +507,6 @@ def _render_gdp():
         fig.update_layout(**_drill_layout())
         st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CFG)
     with dtabs[1]:
-        _sub("Residential &nbsp;&middot;&nbsp; Nonresidential &nbsp;&middot;&nbsp; Inventories &nbsp;&nbsp; ◆ = Total Investment")
         fig = _stacked_fig([
             ("Residential",    _gs(df,GDP_CODES["residential"]),    GDP_COLORS["residential"]),
             ("Nonresidential", _gs(df,GDP_CODES["nonresidential"]), GDP_COLORS["nonresidential"]),
@@ -522,7 +516,6 @@ def _render_gdp():
         fig.update_layout(**_drill_layout())
         st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CFG)
     with dtabs[2]:
-        _sub("Federal &nbsp;&middot;&nbsp; State & Local &nbsp;&nbsp; ◆ = Total Government")
         fig = _stacked_fig([
             ("Federal",       _gs(df,GDP_CODES["federal"]),     GDP_COLORS["federal"]),
             ("State & Local", _gs(df,GDP_CODES["state_local"]), GDP_COLORS["state_local"]),
@@ -531,7 +524,6 @@ def _render_gdp():
         fig.update_layout(**_drill_layout())
         st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CFG)
     with dtabs[3]:
-        _sub("Exports &nbsp;&middot;&nbsp; Imports &nbsp;&nbsp; ◆ = Net Exports")
         fig = _stacked_fig([
             ("Exports", _gs(df,GDP_CODES["exports"]), GDP_COLORS["exports"]),
             ("Imports", _gs(df,GDP_CODES["imports"]), GDP_COLORS["imports"]),
@@ -542,7 +534,6 @@ def _render_gdp():
     with dtabs[4]:
         inv_ch = _gs(df,GDP_CODES["inventories"]).reindex(common).fillna(0)
         fs     = gdp.reindex(common).fillna(0) - inv_ch
-        _sub("Final Sales &nbsp;&middot;&nbsp; Inventory Change &nbsp;&nbsp; ◆ = Total GDP")
         fig = _stacked_fig([
             ("Final Sales",      fs,     GDP_COLORS["final_sales"]),
             ("Inventory Change", inv_ch, GDP_COLORS["inv_change"]),
