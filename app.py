@@ -301,6 +301,22 @@ pre { background:#050505 !important; border:1px solid #222 !important; font-size
 .modebar { background: rgba(0,0,0,0.35) !important; }
 .modebar-btn path { fill: #666 !important; }
 .modebar-btn:hover path { fill: #ff6600 !important; }
+
+/* Recuadro de sección — st.container(border=True) usado en macro_us.py para
+   separar visualmente cada bloque de gráfico (pedido explícito: "recuadro
+   como hay en el segundo cuadro"). Se sobreescribe el estilo default de
+   Streamlit (gris claro, esquinas muy redondeadas) para que combine con la
+   estética BBG oscura del resto de la terminal. */
+[data-testid="stVerticalBlockBorderWrapper"] {
+    border: 1px solid #2a2a2a !important;
+    border-radius: 6px !important;
+    background: #050505 !important;
+    padding: 10px 14px 6px 14px !important;
+    margin-bottom: 14px !important;
+}
+[data-testid="stVerticalBlockBorderWrapper"]:hover {
+    border-color: #3a3a3a !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
