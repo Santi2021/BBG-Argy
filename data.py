@@ -878,8 +878,12 @@ def get_news_argentina():
 # ═══════════════════════════════════════════════════════════════════════════════
 #  ECONOMIC CALENDAR — Investing.com scraper
 #  market: "US" (id=5) · "ARG" (id=29, confirmado del HTML de Investing)
-#  Semana lógica: Lun–Vie actual. Si hoy es Sáb/Dom → próxima semana.
-#  TTL: 3600s — el calendario no cambia durante la sesión de trading.
+#  Ventana lógica: AYER + HOY + MAÑANA (3 días corridos, no la semana Lun-Vie).
+#  FIX pedido por Santi: el fetch a Investing.com a veces devuelve vacío para
+#  el rango de semana completo a ciertas horas (o cae en un día sin releases),
+#  y encima queda cacheado 1h. Con una ventana corta de ayer/hoy/mañana casi
+#  siempre hay algo que mostrar (resultados reales de ayer/hoy + lo que viene).
+#  TTL: 3600s — el calendario no cambia todo el tiempo durante la sesión.
 # ═══════════════════════════════════════════════════════════════════════════════
 
 _INVESTING_COUNTRY_CODES = {"US": ["5"], "ARG": ["29"]}
@@ -964,11 +968,18 @@ _CAL_CATS_ARG = {
 
 
 def _cal_week_range():
-    today = _dt.today()
-    wd    = today.weekday()
-    monday = today + _td(days=(7 - wd)) if wd >= 5 else today - _td(days=wd)
-    friday = monday + _td(days=4)
-    return monday.strftime("%Y-%m-%d"), friday.strftime("%Y-%m-%d")
+    """
+    FIX: antes devolvía Lun-Vie de "la semana lógica" (si es finde, la que
+    viene). Eso hacía que a ciertas horas / ciertos días sin releases el
+    calendario se viera vacío, y como get_economic_calendar cachea 1h, esa
+    foto vacía quedaba pegada un buen rato. Ahora es una ventana corrida de
+    3 días (ayer, hoy, mañana) — siempre trae algo: lo ya publicado de
+    ayer/hoy y lo que se viene mañana.
+    """
+    today     = _dt.today()
+    date_from = today - _td(days=1)
+    date_to   = today + _td(days=1)
+    return date_from.strftime("%Y-%m-%d"), date_to.strftime("%Y-%m-%d")
 
 
 def _cal_extract_period(name, release_date=""):
@@ -1108,7 +1119,7 @@ def _cal_parse_html(html_content, market):
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_economic_calendar(market: str = "US"):
     """
-    Scraper del calendario económico semanal de Investing.com.
+    Scraper del calendario económico de Investing.com.
     market: "US" | "ARG"
     Devuelve list[dict] o {"error": str} si falla.
     """
