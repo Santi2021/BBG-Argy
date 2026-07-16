@@ -1135,80 +1135,119 @@ _INVESTING_BROWSER_HEADERS = {
 }
 
 
+def _cal_post_payload(market, date_from, date_to):
+    return {
+        "country[]":     _INVESTING_COUNTRY_CODES.get(market, ["5"]),
+        "importance[]":  ["1", "2", "3"],
+        "dateFrom":      date_from,
+        "dateTo":        date_to,
+        "timeZone":      "8",
+        "timeFilter":    "timeRemain",
+        "currentTab":    "custom",
+        "submitFilters": "1",
+        "limit_from":    "0",
+    }
+
+
+def _cal_post_headers():
+    return {
+        "X-Requested-With": "XMLHttpRequest",
+        "Referer":          "https://www.investing.com/economic-calendar/",
+        "Origin":           "https://www.investing.com",
+        "Content-Type":     "application/x-www-form-urlencoded",
+    }
+
+
+def _cal_fetch_curl_cffi(market, date_from, date_to):
+    """
+    FIX real del HTTP 403: confirmado en vivo (fetch() desde un browser real
+    logueado en investing.com) que el endpoint funciona perfecto — el 403
+    NO era por el rango de fechas ni por headers faltantes. El bloqueo es a
+    nivel de fingerprint TLS/JA3: la librería "requests" de Python negocia
+    TLS con una firma distinta a la de un navegador real, y eso es lo que
+    Cloudflare/PerimeterX filtran — ningún header (User-Agent, Accept, etc.)
+    lo arregla porque el chequeo pasa ANTES de leer los headers HTTP.
+    curl_cffi sí puede imitar el handshake TLS real de Chrome, así que este
+    es el camino que de verdad puede destrabar esto (agregado a
+    requirements.txt). Si el paquete no está instalado, cae al fallback de
+    abajo (que se sabe que da 403 en Streamlit Cloud, pero no rompe nada).
+    """
+    from curl_cffi import requests as cffi_requests
+    session = cffi_requests.Session(impersonate="chrome124")
+    session.headers.update(_INVESTING_BROWSER_HEADERS)
+    session.get("https://www.investing.com/economic-calendar/", timeout=15)
+    _time.sleep(0.8)
+    r = session.post(
+        "https://www.investing.com/economic-calendar/Service/getCalendarFilteredData",
+        data=_cal_post_payload(market, date_from, date_to),
+        headers=_cal_post_headers(),
+        timeout=20,
+    )
+    return r.status_code, r.text
+
+
+def _cal_fetch_requests_fallback(market, date_from, date_to):
+    session = requests.Session()
+    session.headers.update(_INVESTING_BROWSER_HEADERS)
+    session.get("https://www.investing.com", timeout=12)
+    _time.sleep(1.5)
+    session.get("https://www.investing.com/economic-calendar/", timeout=12)
+    _time.sleep(1.2)
+    r = session.post(
+        "https://www.investing.com/economic-calendar/Service/getCalendarFilteredData",
+        data=_cal_post_payload(market, date_from, date_to),
+        headers=_cal_post_headers(),
+        timeout=20,
+    )
+    return r.status_code, r.text
+
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_economic_calendar(market: str = "US"):
     """
     Scraper del calendario económico de Investing.com.
     market: "US" | "ARG"
     Devuelve list[dict] o {"error": str} si falla.
-
-    NOTA sobre HTTP 403: a diferencia del HTTP 400 (rango de fechas sin
-    resultados, ya resuelto con la ventana ayer/hoy/mañana), un 403 es
-    Investing.com directamente rechazando la request — típicamente su
-    sistema anti-bot (Cloudflare/PerimeterX) bloqueando la IP del servidor
-    en el que corre Streamlit Cloud, no un problema de la fecha pedida. Se
-    reintenta 2 veces con headers más "de navegador real" y sesión nueva
-    cada vez, pero si el bloqueo es por IP/fingerprint del datacenter, un
-    cambio de headers no alcanza — es una limitación del lado de Investing,
-    no del código.
     """
     date_from, date_to = _cal_week_range()
 
+    fetchers = []
+    try:
+        import curl_cffi  # noqa: F401 — solo para chequear si está instalado
+        fetchers.append(_cal_fetch_curl_cffi)
+    except ImportError:
+        pass
+    fetchers.append(_cal_fetch_requests_fallback)
+
     last_error = "unknown"
-    for attempt in range(2):
-        try:
-            session = requests.Session()
-            session.headers.update(_INVESTING_BROWSER_HEADERS)
-            session.get("https://www.investing.com", timeout=12)
-            _time.sleep(1.5)
-            session.get("https://www.investing.com/economic-calendar/", timeout=12)
-            _time.sleep(1.2)
-
-            r = session.post(
-                "https://www.investing.com/economic-calendar/Service/getCalendarFilteredData",
-                data={
-                    "country[]":     _INVESTING_COUNTRY_CODES.get(market, ["5"]),
-                    "importance[]":  ["1", "2", "3"],
-                    "dateFrom":      date_from,
-                    "dateTo":        date_to,
-                    "timeZone":      "8",
-                    "timeFilter":    "timeRemain",
-                    "currentTab":    "custom",
-                    "submitFilters": "1",
-                    "limit_from":    "0",
-                },
-                headers={
-                    "X-Requested-With": "XMLHttpRequest",
-                    "Referer":          "https://www.investing.com/economic-calendar/",
-                    "Origin":           "https://www.investing.com",
-                    "Content-Type":     "application/x-www-form-urlencoded",
-                },
-                timeout=20,
-            )
-
-            if r.status_code != 200:
-                last_error = f"HTTP {r.status_code}"
-                if r.status_code == 403 and attempt == 0:
-                    _time.sleep(2.0)
-                    continue
-                return {"error": last_error}
-
+    for fetch in fetchers:
+        for attempt in range(2):
             try:
-                html = _json.loads(r.text).get("data", "")
-            except Exception:
-                html = r.text
+                status, text = fetch(market, date_from, date_to)
 
-            if not html:
-                last_error = "Respuesta vacía"
-                if attempt == 0:
-                    _time.sleep(2.0)
-                    continue
-                return {"error": last_error}
+                if status != 200:
+                    last_error = f"HTTP {status}"
+                    if status == 403 and attempt == 0:
+                        _time.sleep(2.0)
+                        continue
+                    break  # probar el siguiente fetcher (si hay)
 
-            return _cal_parse_html(html, market)
+                try:
+                    html = _json.loads(text).get("data", "")
+                except Exception:
+                    html = text
 
-        except Exception as e:
-            last_error = str(e)
-            continue
+                if not html:
+                    last_error = "Respuesta vacía"
+                    if attempt == 0:
+                        _time.sleep(2.0)
+                        continue
+                    break
+
+                return _cal_parse_html(html, market)
+
+            except Exception as e:
+                last_error = str(e)
+                break
 
     return {"error": last_error}
