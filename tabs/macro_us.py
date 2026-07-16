@@ -131,11 +131,31 @@ def _style_sub_axes(fig, secondary=True):
     fig.update_xaxes(**ax_style)
     fig.update_yaxes(**ax_style)
 
-def _sec(text):
+# Recuadro ("card") alrededor de cada sección — separa visualmente los bloques.
+# Se abre un st.container(border=True) por sección y se cierra automáticamente
+# al abrir la siguiente (o explícitamente en los puntos donde el flujo sale de
+# un `with` — ver _close_box() en cada uno de esos puntos). Usamos enter/exit
+# manuales (en vez de "with") para no tener que reindentar todo el archivo.
+_open_box = [None]
+
+def _close_box():
+    if _open_box[0] is not None:
+        try:
+            _open_box[0].__exit__(None, None, None)
+        except Exception:
+            pass
+        _open_box[0] = None
+
+def _sec(text, box=True):
+    _close_box()
+    if box:
+        c = st.container(border=True)
+        c.__enter__()
+        _open_box[0] = c
     st.markdown(
         f'<div style="color:{ORANGE};font-size:11px;font-weight:bold;letter-spacing:2px;'
         f'text-transform:uppercase;border-bottom:1px solid #333;padding-bottom:3px;'
-        f'margin:18px 0 6px 0;font-family:\'Courier New\',monospace">{text}</div>',
+        f'margin:6px 0 6px 0;font-family:\'Courier New\',monospace">{text}</div>',
         unsafe_allow_html=True
     )
 
@@ -569,6 +589,7 @@ def _render_gdp():
     <div style="color:#444;font-size:11px;{T}margin-bottom:10px;">
       BEA NIPA Table 1.1.2 &nbsp;·&nbsp; Quarterly annualized rates &nbsp;·&nbsp; Contributions in pp
     </div>""", unsafe_allow_html=True)
+    _close_box()
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  TAB: LABOR  —  2Y fixed
@@ -889,6 +910,7 @@ def _render_labor():
             _style_sub_axes(fig_ov)
             st.plotly_chart(fig_ov, use_container_width=True, config=PLOTLY_CFG)
     st.markdown(f'<div style="color:{MUTED};font-size:11px;margin-top:6px;font-family:\'Courier New\',monospace">Sources: BLS CES (payrolls, wages) · BLS CPS (unemployment, participation) · FRED JOLTS</div>', unsafe_allow_html=True)
+    _close_box()
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  TAB: INFLATION  —  2Y fixed
@@ -1070,7 +1092,11 @@ def _render_inflation():
                     line=dict(color=color, width=2, dash=dash),
                     hovertemplate=f"<b>{name}</b>: %{{y:.2f}}%<extra></extra>",
                 ))
-        lay4a = _layout(340)
+        # Altura igualada a los otros charts con rangeselector (420): el selector
+        # y la leyenda se posicionan en fracción del área del gráfico, así que un
+        # chart más bajo (antes 340) comprime esa fracción y el espacio entre
+        # ambos se ve más apretado aunque el margen en px sea el mismo.
+        lay4a = _layout(420)
         lay4a["xaxis"]["rangeselector"] = _rangeselector()
         lay4a["margin"] = dict(l=55, r=20, t=92, b=36)
         fig4a.update_layout(**lay4a)
@@ -1091,6 +1117,7 @@ def _render_inflation():
         fig4b.update_layout(**_layout(300))
         st.plotly_chart(fig4b, use_container_width=True, config=PLOTLY_CFG)
     st.markdown(f'<div style="color:{MUTED};font-size:11px;margin-top:8px;font-family:\'Courier New\',monospace">Sources: BLS (CPI CUUR series) · FRED (PCE, TIPS breakevens, Michigan Survey)</div>', unsafe_allow_html=True)
+    _close_box()
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  TAB: RATES  —  2Y fixed default
@@ -1368,10 +1395,12 @@ def _render_fedwatch():
         zq_data = _load_zq_barchart()
     if not zq_data:
         st.warning("No se pudieron cargar contratos ZQ desde Barchart. Verificar conexión.")
+        _close_box()
         return
     labels_now, rates_now, changes_now = _build_fw_curve(zq_data)
     if not rates_now:
         st.warning("No hay meetings futuros con datos disponibles.")
+        _close_box()
         return
     front_rate   = rates_now[0]
     min_rate     = min(rates_now)
@@ -1577,6 +1606,7 @@ def _render_fedwatch():
         f'Metodología: tasa implícita = 100 − precio settle &nbsp;·&nbsp; Cache: 60 min</div>',
         unsafe_allow_html=True,
     )
+    _close_box()
 
 def _render_rates():
     _breadcrumb("RATES")
@@ -1686,6 +1716,7 @@ def _render_rates():
                 <thead>{hdr_yc}</thead><tbody>{body_yc}</tbody>
               </table>
             </div>""", unsafe_allow_html=True)
+            _close_box()
         with ytabs[1]:
             _sec("10Y · 2Y · 3M — HISTORICAL")
             fig_yh = go.Figure()
@@ -1704,6 +1735,7 @@ def _render_rates():
             lay_yh["xaxis"]["rangeselector"] = _rangeselector()
             fig_yh.update_layout(**lay_yh)
             st.plotly_chart(fig_yh, use_container_width=True, config=PLOTLY_CFG)
+            _close_box()
         with ytabs[2]:
             _sec("2s10s & 10Y-3M SPREADS")
             fig_sp = go.Figure()
@@ -1721,6 +1753,7 @@ def _render_rates():
             lay_sp = _layout(320); lay_sp["margin"] = dict(l=55, r=20, t=36, b=36)
             fig_sp.update_layout(**lay_sp)
             st.plotly_chart(fig_sp, use_container_width=True, config=PLOTLY_CFG)
+            _close_box()
     with rtabs[1]:
         _sec("FED CORRIDOR — FED FUNDS · SOFR · IORB · ON RRP")
         fig_corr = make_subplots(specs=[[{"secondary_y": True}]])
@@ -1785,6 +1818,7 @@ def _render_rates():
         fig_tr.update_layout(**lay_tr)
         _style_sub_axes(fig_tr)
         st.plotly_chart(fig_tr, use_container_width=True, config=PLOTLY_CFG)
+        _close_box()
     with rtabs[2]:
         _sec("CREDIT SPREADS — OAS (basis points)")
         ig_bp  = D["ig_oas"]  * 100
@@ -1839,6 +1873,7 @@ def _render_rates():
         fig_nf.update_layout(**lay_nf)
         _style_sub_axes(fig_nf)
         st.plotly_chart(fig_nf, use_container_width=True, config=PLOTLY_CFG)
+        _close_box()
     with rtabs[3]:
         _render_fedwatch()
     with rtabs[4]:
@@ -1913,13 +1948,25 @@ def _render_rates():
         <div style="color:#444;font-size:11px;{T2}margin-bottom:10px;">
           FRED &nbsp;·&nbsp; US Treasury &nbsp;·&nbsp; OAS in basis points (BAML ×100) &nbsp;·&nbsp; Red = rising rate / Green = falling
         </div>""", unsafe_allow_html=True)
+        _close_box()
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  MAIN
 # ═══════════════════════════════════════════════════════════════════════════════
 def render():
+    # _close_box() extra de seguridad: si algún _render_* corta antes de
+    # llegar a su _close_box() (excepción no prevista), esto evita que un
+    # recuadro quede "abierto" y arrastre contenido de las demás sub-tabs.
     subtabs = st.tabs(["GDP", "LABOR", "INFLATION", "RATES"])
-    with subtabs[0]: _render_gdp()
-    with subtabs[1]: _render_labor()
-    with subtabs[2]: _render_inflation()
-    with subtabs[3]: _render_rates()
+    with subtabs[0]:
+        try: _render_gdp()
+        finally: _close_box()
+    with subtabs[1]:
+        try: _render_labor()
+        finally: _close_box()
+    with subtabs[2]:
+        try: _render_inflation()
+        finally: _close_box()
+    with subtabs[3]:
+        try: _render_rates()
+        finally: _close_box()
