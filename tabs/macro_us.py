@@ -9,6 +9,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import requests
 import json
+import time as _time
 from datetime import datetime as _dt
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -299,12 +300,18 @@ BLS_CPI_IDS = {
 def _load_bls(series_dict: dict, start_year=2015):
     """
     FIX v2: divide las series en batches de 10 con timeout de 20s cada uno.
-    Si un batch falla (timeout u otro error de red), se omite y continúa.
-    Esto evita el HTTPSConnectionPool timeout que bloqueaba toda la sección LABOR.
+    Si un batch falla (timeout u otro error de red), se reintenta una vez
+    antes de omitirlo — un solo intento fallido no debería perder sectores
+    enteros (ej. "Sector Breakdown" mostrando solo 3 de 11 series cuando el
+    2do batch da timeout una sola vez). El resultado completo queda cacheado
+    1h (ver @st.cache_data arriba), así que evitar una falla parcial acá
+    importa: si no, esa falla parcial queda "pegada" en cache hasta que
+    expire, aunque la API ya esté de vuelta.
     """
     all_ids = list(series_dict.values())
-    BATCH   = 10   # BLS free tier: max 25 por request; 10 es más seguro
-    TIMEOUT = 20   # segundos por batch — fail fast, no colgar la UI
+    BATCH    = 10   # BLS free tier: max 25 por request; 10 es más seguro
+    TIMEOUT  = 20   # segundos por batch — fail fast, no colgar la UI
+    RETRIES  = 2    # intento original + 1 reintento por batch
     rows    = []
     for i in range(0, len(all_ids), BATCH):
         batch = all_ids[i:i + BATCH]
@@ -315,34 +322,38 @@ def _load_bls(series_dict: dict, start_year=2015):
             registrationkey=BLS_KEY,
             annualaverage=False,
         )
-        try:
-            resp = requests.post(
-                "https://api.bls.gov/publicAPI/v2/timeseries/data/",
-                data=json.dumps(payload),
-                headers={"Content-type": "application/json"},
-                timeout=TIMEOUT,
-            )
-            resp.raise_for_status()
-            for series in resp.json().get("Results", {}).get("series", []):
-                sid = series["seriesID"]
-                for obs in series.get("data", []):
-                    period = obs.get("period", "")
-                    if not period.startswith("M") or period == "M13":
-                        continue
-                    try:
-                        month = int(period[1:])
-                        year  = int(obs["year"])
-                        val   = float(obs["value"])
-                        rows.append({
-                            "series_id": sid,
-                            "date": pd.Timestamp(f"{year}-{month:02d}-01"),
-                            "value": val,
-                        })
-                    except:
-                        continue
-        except Exception:
-            # Un batch fallido no rompe el resto
-            continue
+        for attempt in range(RETRIES):
+            try:
+                resp = requests.post(
+                    "https://api.bls.gov/publicAPI/v2/timeseries/data/",
+                    data=json.dumps(payload),
+                    headers={"Content-type": "application/json"},
+                    timeout=TIMEOUT,
+                )
+                resp.raise_for_status()
+                for series in resp.json().get("Results", {}).get("series", []):
+                    sid = series["seriesID"]
+                    for obs in series.get("data", []):
+                        period = obs.get("period", "")
+                        if not period.startswith("M") or period == "M13":
+                            continue
+                        try:
+                            month = int(period[1:])
+                            year  = int(obs["year"])
+                            val   = float(obs["value"])
+                            rows.append({
+                                "series_id": sid,
+                                "date": pd.Timestamp(f"{year}-{month:02d}-01"),
+                                "value": val,
+                            })
+                        except:
+                            continue
+                break  # batch OK, no hace falta reintentar
+            except Exception:
+                if attempt + 1 < RETRIES:
+                    _time.sleep(1.5)
+                    continue
+                # Se agotaron los reintentos — un batch fallido no rompe el resto
     if not rows:
         raise RuntimeError("BLS API no devolvió datos — todos los batches fallaron")
     return pd.DataFrame(rows).sort_values(["series_id", "date"]).reset_index(drop=True)
@@ -472,9 +483,11 @@ def _render_gdp():
     _sec("DRILL-DOWN")
     dtabs = st.tabs(["Consumption", "Investment", "Government", "Net Exports", "Final Sales"])
     def _sub(text):
+        # Antes color:#777 sobre fondo negro — se leía como "puntitos blancos",
+        # casi invisible en pantalla. Subido a #aaa + 12px para que se lea bien.
         st.markdown(
-            f'<div style="font-family:Courier New,monospace;font-size:11px;'
-            f'color:#777;margin:4px 0 0 0;padding:0;line-height:1.4">{text}</div>',
+            f'<div style="font-family:Courier New,monospace;font-size:12px;'
+            f'color:#aaa;margin:4px 0 0 0;padding:0;line-height:1.4">{text}</div>',
             unsafe_allow_html=True
         )
     def _drill_layout():
