@@ -92,10 +92,22 @@ div[data-testid="stAppViewBlockContainer"] { padding-top: 0 !important; }
 @keyframes tick-arg  { 0% { transform: translateX(0); } 100% { transform: translateX(-100%); } }
 
 /* ── Tabs ── */
+/* FIX (visto en vivo): [data-testid="stTabs"] envuelve TODO el widget —
+   la fila de botones Y los paneles de contenido de las 5 sub-pestañas.
+   Ponerle border-bottom acá hacía que la línea apareciera al FINAL de
+   TODO el contenido (ej. después de la tabla de RATE SNAPSHOT, pegada al
+   footer) en vez de justo debajo de los botones — se veían "3 rayitas"
+   apiladas ahí (esta línea + el borde del recuadro + el borde del footer).
+   Ahora el borde va sobre [role="tablist"], que es solo la fila de
+   botones, así queda donde tiene que estar sin importar cuánto contenido
+   tenga la pestaña. */
 [data-testid="stTabs"] {
     margin: 0 !important; padding: 0 !important;
-    background: #000 !important; border-bottom: 1px solid #333 !important;
+    background: #000 !important;
     gap: 0 !important; margin-top: 0 !important;
+}
+[data-testid="stTabs"] [role="tablist"] {
+    border-bottom: 1px solid #333 !important;
 }
 [data-testid="stTab"] {
     font-family: 'Courier New', monospace !important;
@@ -166,8 +178,13 @@ div[data-testid="stAppViewBlockContainer"] { padding-top: 0 !important; }
 .mkt   { color: #555; font-size: 9px; }
 
 /* ── Footer ── */
+/* margin-top subido: antes el borde del footer quedaba pegado al borde
+   inferior del último recuadro de sección — se veían "3 rayitas" juntas
+   (borde de stTabs + borde del recuadro + borde del footer). Ya se sacó
+   el borde de stTabs (ver arriba) y acá se separa el footer del recuadro
+   para que las 2 líneas que quedan no se sientan amontonadas. */
 .ft { border-top:1px solid #333; padding:6px 0; color:#333;
-      font-size:9px; text-align:center; letter-spacing:1px; margin-top:8px; }
+      font-size:9px; text-align:center; letter-spacing:1px; margin-top:28px; }
 
 /* ── Misc ── */
 [data-testid="stHorizontalBlock"] { gap: 4px !important; align-items: flex-start !important; }
