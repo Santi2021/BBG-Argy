@@ -1045,6 +1045,12 @@ def _render_inflation():
     fig3.update_layout(**_layout(340))
     st.plotly_chart(fig3, use_container_width=True, config=PLOTLY_CFG)
     _sec("INFLATION EXPECTATIONS — TIPS BREAKEVENS & MICHIGAN SURVEY")
+    # FIX: breakevens y Michigan son series de FRED con frecuencia/gaps
+    # distintos a CPI/BLS (breakevens son diarias, no mensuales) — "últimas 24
+    # filas" les daba una ventana de fechas equivocada o desalineada entre
+    # series. Acá se recorta por fecha real (2 años calendario), no por
+    # cantidad de observaciones.
+    exp_cutoff = (pd.Timestamp.today() - pd.DateOffset(years=2)).strftime("%Y-%m-%d")
     exp_tabs = st.tabs(["TIPS Breakevens", "Michigan Survey"])
     with exp_tabs[0]:
         fig4a = go.Figure()
@@ -1052,14 +1058,17 @@ def _render_inflation():
             ("5Y Breakeven",  "breakeven_5y",  CYAN,   "solid"),
             ("10Y Breakeven", "breakeven_10y", VIOLET, "dash"),
         ]:
-            t = trim(fi(key).dropna())
+            t = _rtrim(fi(key).dropna(), exp_cutoff)
             if len(t):
                 fig4a.add_trace(go.Scatter(
                     name=name, x=t.index, y=t.values,
                     line=dict(color=color, width=2, dash=dash),
                     hovertemplate=f"<b>{name}</b>: %{{y:.2f}}%<extra></extra>",
                 ))
-        fig4a.update_layout(**_layout(300))
+        lay4a = _layout(340)
+        lay4a["xaxis"]["rangeselector"] = _rangeselector()
+        lay4a["margin"] = dict(l=55, r=20, t=54, b=36)
+        fig4a.update_layout(**lay4a)
         st.plotly_chart(fig4a, use_container_width=True, config=PLOTLY_CFG)
     with exp_tabs[1]:
         fig4b = go.Figure()
@@ -1067,7 +1076,7 @@ def _render_inflation():
             ("Michigan 1Y", "mich_1y", GOLD),
             ("Michigan 5Y", "mich_5y", BLUE),
         ]:
-            t = trim(fi(key).dropna())
+            t = _rtrim(fi(key).dropna(), exp_cutoff)
             if len(t):
                 fig4b.add_trace(go.Scatter(
                     name=name, x=t.index, y=t.values,
