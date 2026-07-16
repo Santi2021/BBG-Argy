@@ -1116,62 +1116,99 @@ def _cal_parse_html(html_content, market):
     return events
 
 
+_INVESTING_BROWSER_HEADERS = {
+    "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+    "Accept-Encoding": "gzip, deflate, br",
+    "sec-ch-ua": '"Chromium";v="126", "Not.A/Brand";v="24", "Google Chrome";v="126"',
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": '"Windows"',
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+    "Upgrade-Insecure-Requests": "1",
+    "Cache-Control": "max-age=0",
+}
+
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_economic_calendar(market: str = "US"):
     """
     Scraper del calendario económico de Investing.com.
     market: "US" | "ARG"
     Devuelve list[dict] o {"error": str} si falla.
+
+    NOTA sobre HTTP 403: a diferencia del HTTP 400 (rango de fechas sin
+    resultados, ya resuelto con la ventana ayer/hoy/mañana), un 403 es
+    Investing.com directamente rechazando la request — típicamente su
+    sistema anti-bot (Cloudflare/PerimeterX) bloqueando la IP del servidor
+    en el que corre Streamlit Cloud, no un problema de la fecha pedida. Se
+    reintenta 2 veces con headers más "de navegador real" y sesión nueva
+    cada vez, pero si el bloqueo es por IP/fingerprint del datacenter, un
+    cambio de headers no alcanza — es una limitación del lado de Investing,
+    no del código.
     """
     date_from, date_to = _cal_week_range()
 
-    try:
-        session = requests.Session()
-        session.headers.update({
-            "User-Agent":
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            "Accept-Language": "en-US,en;q=0.9",
-        })
-        session.get("https://www.investing.com", timeout=12)
-        _time.sleep(1.2)
-        session.get("https://www.investing.com/economic-calendar/", timeout=12)
-        _time.sleep(1.0)
-
-        r = session.post(
-            "https://www.investing.com/economic-calendar/Service/getCalendarFilteredData",
-            data={
-                "country[]":     _INVESTING_COUNTRY_CODES.get(market, ["5"]),
-                "importance[]":  ["1", "2", "3"],
-                "dateFrom":      date_from,
-                "dateTo":        date_to,
-                "timeZone":      "8",
-                "timeFilter":    "timeRemain",
-                "currentTab":    "custom",
-                "submitFilters": "1",
-                "limit_from":    "0",
-            },
-            headers={
-                "X-Requested-With": "XMLHttpRequest",
-                "Referer":          "https://www.investing.com/economic-calendar/",
-                "Origin":           "https://www.investing.com",
-                "Content-Type":     "application/x-www-form-urlencoded",
-            },
-            timeout=20,
-        )
-
-        if r.status_code != 200:
-            return {"error": f"HTTP {r.status_code}"}
-
+    last_error = "unknown"
+    for attempt in range(2):
         try:
-            html = _json.loads(r.text).get("data", "")
-        except Exception:
-            html = r.text
+            session = requests.Session()
+            session.headers.update(_INVESTING_BROWSER_HEADERS)
+            session.get("https://www.investing.com", timeout=12)
+            _time.sleep(1.5)
+            session.get("https://www.investing.com/economic-calendar/", timeout=12)
+            _time.sleep(1.2)
 
-        if not html:
-            return {"error": "Respuesta vacía"}
+            r = session.post(
+                "https://www.investing.com/economic-calendar/Service/getCalendarFilteredData",
+                data={
+                    "country[]":     _INVESTING_COUNTRY_CODES.get(market, ["5"]),
+                    "importance[]":  ["1", "2", "3"],
+                    "dateFrom":      date_from,
+                    "dateTo":        date_to,
+                    "timeZone":      "8",
+                    "timeFilter":    "timeRemain",
+                    "currentTab":    "custom",
+                    "submitFilters": "1",
+                    "limit_from":    "0",
+                },
+                headers={
+                    "X-Requested-With": "XMLHttpRequest",
+                    "Referer":          "https://www.investing.com/economic-calendar/",
+                    "Origin":           "https://www.investing.com",
+                    "Content-Type":     "application/x-www-form-urlencoded",
+                },
+                timeout=20,
+            )
 
-        return _cal_parse_html(html, market)
+            if r.status_code != 200:
+                last_error = f"HTTP {r.status_code}"
+                if r.status_code == 403 and attempt == 0:
+                    _time.sleep(2.0)
+                    continue
+                return {"error": last_error}
 
-    except Exception as e:
-        return {"error": str(e)}
+            try:
+                html = _json.loads(r.text).get("data", "")
+            except Exception:
+                html = r.text
+
+            if not html:
+                last_error = "Respuesta vacía"
+                if attempt == 0:
+                    _time.sleep(2.0)
+                    continue
+                return {"error": last_error}
+
+            return _cal_parse_html(html, market)
+
+        except Exception as e:
+            last_error = str(e)
+            continue
+
+    return {"error": last_error}
