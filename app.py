@@ -313,9 +313,28 @@ pre { background:#050505 !important; border:1px solid #222 !important; font-size
     background: #050505 !important;
     padding: 10px 14px 6px 14px !important;
     margin-bottom: 14px !important;
+    width: 100% !important;
+    display: block !important;
 }
 [data-testid="stVerticalBlockBorderWrapper"]:hover {
     border-color: #3a3a3a !important;
+}
+/* FIX ancho: cuando el recuadro contiene un st.tabs() (Total/Priv-Govt,
+   YoY/MoM, TIPS/Michigan, etc.), Streamlit encoge el bloque completo al
+   ancho de la barra de tabs (que a propósito es angosta — ver estilos
+   "Nivel 3/4" más arriba) en vez de estirarlo al 100%. Esto fuerza el
+   ancho completo en el CONTENEDOR/BLOQUE sin tocar el ancho de la barra
+   de tabs en sí (que debe seguir viéndose como pill/link compacto). */
+[data-testid="stVerticalBlockBorderWrapper"] > div,
+[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stVerticalBlock"],
+[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stElementContainer"],
+[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stTabPanel"] {
+    width: 100% !important;
+}
+[data-testid="stVerticalBlockBorderWrapper"] .js-plotly-plot,
+[data-testid="stVerticalBlockBorderWrapper"] .plot-container,
+[data-testid="stVerticalBlockBorderWrapper"] .main-svg {
+    width: 100% !important;
 }
 </style>
 """, unsafe_allow_html=True)
