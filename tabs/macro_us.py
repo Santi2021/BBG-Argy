@@ -622,11 +622,10 @@ def _render_labor():
         (f"{_lat(fs('jolts_openings'))/1000:.1f}M" if _lat(fs('jolts_openings')) else "—", "JOLTS OPEN", "job openings", CYAN),
     ])
     _sec("NONFARM PAYROLLS — MONTHLY CHANGE (000s)")
-    view_opt = st.radio("View", ["Total", "Private vs Government"],
-                        horizontal=True, label_visibility="collapsed", key="labor_view")
-    ma3  = pay_ch_t.rolling(3).mean()
-    fig1 = go.Figure()
-    if view_opt == "Total":
+    ma3 = pay_ch_t.rolling(3).mean()
+    view_tabs = st.tabs(["Total", "Private vs Government"])
+    with view_tabs[0]:
+        fig1 = go.Figure()
         fig1.add_trace(go.Bar(
             name="Payrolls MoM", x=pay_ch_t.index, y=pay_ch_t.values,
             marker_color=[GREEN if v >= 0 else RED for v in pay_ch_t.values],
@@ -637,23 +636,30 @@ def _render_labor():
             line=dict(color=CYAN, width=2, dash="dot"),
             hovertemplate="<b>3M Avg</b>: %{y:+,.0f}K<extra></extra>",
         ))
-    else:
-        fig1.add_trace(go.Bar(
+        fig1.add_hline(y=0, line_color="#333", line_width=1)
+        lay1 = _layout(440)
+        lay1["xaxis"]["rangeselector"] = _rangeselector()
+        lay1["margin"] = dict(l=55, r=20, t=54, b=36)
+        fig1.update_layout(**lay1)
+        st.plotly_chart(fig1, use_container_width=True, config=PLOTLY_CFG)
+    with view_tabs[1]:
+        fig1b = go.Figure()
+        fig1b.add_trace(go.Bar(
             name="Private", x=pay_priv_ch_t.index, y=pay_priv_ch_t.values,
             marker_color=BLUE, opacity=0.85,
             hovertemplate="<b>Private</b>: %{y:+,.0f}K<extra></extra>",
         ))
-        fig1.add_trace(go.Bar(
+        fig1b.add_trace(go.Bar(
             name="Government", x=pay_govt_ch_t.index, y=pay_govt_ch_t.values,
             marker_color=AMBER, opacity=0.85,
             hovertemplate="<b>Government</b>: %{y:+,.0f}K<extra></extra>",
         ))
-    fig1.add_hline(y=0, line_color="#333", line_width=1)
-    lay1 = _layout(440)
-    lay1["xaxis"]["rangeselector"] = _rangeselector()
-    lay1["margin"] = dict(l=55, r=20, t=54, b=36)
-    fig1.update_layout(**lay1)
-    st.plotly_chart(fig1, use_container_width=True, config=PLOTLY_CFG)
+        fig1b.add_hline(y=0, line_color="#333", line_width=1)
+        lay1b = _layout(440)
+        lay1b["xaxis"]["rangeselector"] = _rangeselector()
+        lay1b["margin"] = dict(l=55, r=20, t=54, b=36)
+        fig1b.update_layout(**lay1b)
+        st.plotly_chart(fig1b, use_container_width=True, config=PLOTLY_CFG)
     _sec("NONFARM PAYROLLS — SECTOR BREAKDOWN")
     SECTOR_CFG = [
         ("Goods Producing",       BLS_IDS["sec_mining"],       "#f59e0b",  "goods"),
@@ -959,61 +965,67 @@ def _render_inflation():
     fig1.update_layout(**lay1)
     st.plotly_chart(fig1, use_container_width=True, config=PLOTLY_CFG)
     _sec("CPI COMPONENT CONTRIBUTIONS")
-    mode = st.radio("Mode", ["YoY %", "MoM %"], horizontal=True,
-                    label_visibility="collapsed", key="infl_mode")
-    contrib_data = {}
-    for key, (label, weight, color) in CPI_COMP.items():
-        s = cs(key)
-        if s.empty: continue
-        if mode == "YoY %":
-            contrib = yoy(s) * weight
-        else:
-            contrib = mom(s) * weight
-        contrib_data[label] = contrib
-    if contrib_data:
-        contrib_df = pd.DataFrame(contrib_data).dropna()
-        contrib_df = trim(contrib_df)
-        if mode == "YoY %":
-            total = trim(cpi_all_yoy.dropna())
-        else:
-            total = trim(mom(cs("cpi_all")).dropna())
-        common_idx = contrib_df.index.intersection(total.index)
-        contrib_df = contrib_df.reindex(common_idx)
-        total      = total.reindex(common_idx)
-        fig2 = go.Figure()
-        pos_stack = pd.Series(0.0, index=common_idx)
-        neg_stack = pd.Series(0.0, index=common_idx)
+    mode_tabs = st.tabs(["YoY %", "MoM %"])
+    for mode, mode_tab in zip(["YoY %", "MoM %"], mode_tabs):
+      with mode_tab:
+        contrib_data = {}
         for key, (label, weight, color) in CPI_COMP.items():
-            if label not in contrib_df.columns: continue
-            vals     = contrib_df[label]
-            pos_vals = vals.clip(lower=0)
-            neg_vals = vals.clip(upper=0)
-            if pos_vals.abs().sum() > 0:
-                fig2.add_trace(go.Bar(
-                    name=label, x=common_idx, y=pos_vals.values,
-                    base=pos_stack.values,
-                    marker=dict(color=color, line=dict(width=0)),
-                    showlegend=True,
-                    hovertemplate=f"<b>{label}</b>: %{{y:+.3f}}pp<extra></extra>",
-                ))
-                pos_stack += pos_vals
-            if neg_vals.abs().sum() > 0:
-                fig2.add_trace(go.Bar(
-                    name=label, x=common_idx, y=neg_vals.values,
-                    base=neg_stack.values,
-                    marker=dict(color=color, line=dict(width=0)),
-                    showlegend=False,
-                    hovertemplate=f"<b>{label}</b>: %{{y:+.3f}}pp<extra></extra>",
-                ))
-                neg_stack += neg_vals
-        fig2.add_trace(go.Scatter(
-            name="CPI Total", x=common_idx, y=total.values,
-            mode="lines", line=dict(color=WHITE, width=2),
-            hovertemplate="<b>CPI Total</b>: %{y:.2f}%<extra></extra>",
-        ))
-        l2 = _layout(420)
-        fig2.update_layout(**l2)
-        st.plotly_chart(fig2, use_container_width=True, config=PLOTLY_CFG)
+            s = cs(key)
+            if s.empty: continue
+            if mode == "YoY %":
+                contrib = yoy(s) * weight
+            else:
+                contrib = mom(s) * weight
+            contrib_data[label] = contrib
+        if contrib_data:
+            contrib_df = pd.DataFrame(contrib_data).dropna()
+            contrib_df = trim(contrib_df)
+            if mode == "YoY %":
+                total = trim(cpi_all_yoy.dropna())
+            else:
+                total = trim(mom(cs("cpi_all")).dropna())
+            common_idx = contrib_df.index.intersection(total.index)
+            contrib_df = contrib_df.reindex(common_idx)
+            total      = total.reindex(common_idx)
+            fig2 = go.Figure()
+            pos_stack = pd.Series(0.0, index=common_idx)
+            neg_stack = pd.Series(0.0, index=common_idx)
+            for key, (label, weight, color) in CPI_COMP.items():
+                if label not in contrib_df.columns: continue
+                vals     = contrib_df[label]
+                pos_vals = vals.clip(lower=0)
+                neg_vals = vals.clip(upper=0)
+                # FIX: legendgroup en ambos traces — antes, al ocultar una serie
+                # desde la leyenda, solo se ocultaba la parte positiva; la parte
+                # negativa (showlegend=False) quedaba "pegada" visible porque no
+                # estaba vinculada al mismo grupo de leyenda.
+                if pos_vals.abs().sum() > 0:
+                    fig2.add_trace(go.Bar(
+                        name=label, x=common_idx, y=pos_vals.values,
+                        base=pos_stack.values,
+                        marker=dict(color=color, line=dict(width=0)),
+                        legendgroup=label, showlegend=True,
+                        hovertemplate=f"<b>{label}</b>: %{{y:+.3f}}pp<extra></extra>",
+                    ))
+                    pos_stack += pos_vals
+                if neg_vals.abs().sum() > 0:
+                    fig2.add_trace(go.Bar(
+                        name=label, x=common_idx, y=neg_vals.values,
+                        base=neg_stack.values,
+                        marker=dict(color=color, line=dict(width=0)),
+                        legendgroup=label, showlegend=False,
+                        hovertemplate=f"<b>{label}</b>: %{{y:+.3f}}pp<extra></extra>",
+                    ))
+                    neg_stack += neg_vals
+            fig2.add_trace(go.Scatter(
+                name="CPI Total", x=common_idx, y=total.values,
+                mode="lines", line=dict(color=WHITE, width=2),
+                legendgroup="CPI Total",
+                hovertemplate="<b>CPI Total</b>: %{y:.2f}%<extra></extra>",
+            ))
+            l2 = _layout(420)
+            fig2.update_layout(**l2)
+            st.plotly_chart(fig2, use_container_width=True, config=PLOTLY_CFG)
     _sec("SHELTER vs CORE EX-SHELTER — YoY %")
     shelter_yoy     = yoy(cs("cpi_shelter"))
     SHELTER_W       = 0.36
