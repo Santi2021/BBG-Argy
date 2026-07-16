@@ -134,7 +134,7 @@ div[data-testid="stAppViewBlockContainer"] { padding-top: 0 !important; }
 
 .bbg-table { width:100%; border-collapse:collapse; font-family:'Courier New',monospace; font-size:11px; }
 .bbg-table thead tr { background:#111; }
-.bbg-table thead th { color:#ff6600; font-size:8px; font-weight:bold; letter-spacing:1px;
+.bbg-table thead th { color:#ff6600; font-size:10px; font-weight:bold; letter-spacing:1px;
                       text-transform:uppercase; text-align:left; padding:2px 6px;
                       border-bottom:1px solid #ff6600; white-space:nowrap; }
 .bbg-table tbody tr { border-bottom:1px solid #0a0a0a; }
@@ -148,12 +148,12 @@ div[data-testid="stAppViewBlockContainer"] { padding-top: 0 !important; }
 
 /* ── KPI strip ── */
 .kpi-strip { display:flex; gap:1px; background:#333; border:1px solid #333; margin-bottom:10px; }
-.kpi-item { background:#000; padding:5px 10px; flex:1; min-width:80px; }
-.kpi-label { font-size:8px; font-weight:bold; letter-spacing:1px;
+.kpi-item { background:#000; padding:8px 14px; flex:1; min-width:100px; }
+.kpi-label { font-size:10px; font-weight:bold; letter-spacing:1px;
              text-transform:uppercase; color:#ff6600; font-family:'Courier New',monospace; }
-.kpi-value { font-size:15px; font-weight:bold; color:#ffcc00; line-height:1.1;
+.kpi-value { font-size:18px; font-weight:bold; color:#ffcc00; line-height:1.15;
              font-family:'Courier New',monospace; }
-.kpi-sub   { font-size:9px; font-weight:bold; font-family:'Courier New',monospace; }
+.kpi-sub   { font-size:11px; font-weight:bold; font-family:'Courier New',monospace; }
 .kpi-sub.up   { color:#00ff41; }
 .kpi-sub.down { color:#ff3b3b; }
 .kpi-sub.flat { color:#555; }
@@ -192,7 +192,7 @@ div[data-testid="stAppViewBlockContainer"] { padding-top: 0 !important; }
     color:#ff6600 !important; padding:3px 10px !important;
 }
 .stRadio > div { gap: 4px !important; }
-.stRadio label { font-family:'Courier New',monospace !important; font-size:10px !important; color:#555 !important; }
+.stRadio label { font-family:'Courier New',monospace !important; font-size:12px !important; color:#888 !important; }
 .stRadio [aria-checked="true"] + div { color:#ff6600 !important; }
 pre { background:#050505 !important; border:1px solid #222 !important; font-size:9px !important; }
 
