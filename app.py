@@ -92,12 +92,12 @@ div[data-testid="stAppViewBlockContainer"] { padding-top: 0 !important; }
 @keyframes tick-arg  { 0% { transform: translateX(0); } 100% { transform: translateX(-100%); } }
 
 /* ── Tabs ── */
-[data-testid="stTabs"] { margin: 0 !important; padding: 0 !important; }
-[data-testid="stTabBar"] {
+[data-testid="stTabs"] {
+    margin: 0 !important; padding: 0 !important;
     background: #000 !important; border-bottom: 1px solid #333 !important;
-    padding: 0 !important; gap: 0 !important; margin-top: 0 !important;
+    gap: 0 !important; margin-top: 0 !important;
 }
-[data-testid="stTabBar"] button {
+[data-testid="stTab"] {
     font-family: 'Courier New', monospace !important;
     font-size: 10px !important; font-weight: bold !important;
     letter-spacing: 1px !important; text-transform: uppercase !important;
@@ -105,13 +105,13 @@ div[data-testid="stAppViewBlockContainer"] { padding-top: 0 !important; }
     border: none !important; border-bottom: 2px solid transparent !important;
     border-radius: 0 !important; padding: 3px 10px !important;
     height: 26px !important; white-space: nowrap !important;
+    cursor: pointer !important;
 }
-[data-testid="stTabBar"] button:hover { color: #fff !important; background: #0a0a0a !important; }
-[data-testid="stTabBar"] button[aria-selected="true"] {
+[data-testid="stTab"]:hover { color: #fff !important; background: #0a0a0a !important; }
+[data-testid="stTab"][aria-selected="true"] {
     color: #ff6600 !important; border-bottom: 2px solid #ff6600 !important;
 }
-[data-testid="stTabBar"] [role="presentation"] { display: none !important; }
-[data-testid="stTabsContent"] { background: #000 !important; padding: 4px 4px !important; }
+[data-testid="stTabPanel"] { background: #000 !important; padding: 4px 4px !important; }
 
 [data-testid="stVerticalBlock"] > [data-testid="stVerticalBlockBorderWrapper"]:first-child {
     margin-top: 0 !important; padding-top: 0 !important;
@@ -195,7 +195,6 @@ div[data-testid="stAppViewBlockContainer"] { padding-top: 0 !important; }
 .stRadio label { font-family:'Courier New',monospace !important; font-size:10px !important; color:#555 !important; }
 .stRadio [aria-checked="true"] + div { color:#ff6600 !important; }
 pre { background:#050505 !important; border:1px solid #222 !important; font-size:9px !important; }
-[data-testid="stTabBar"] [data-baseweb="tab-list"] { background: transparent !important; }
 
 /* ── Selector de período (Radar, tab Argentina) — solo estos botones ── */
 .st-key-radar_period_buttons { max-width: 420px; margin-top: 10px; margin-bottom: 4px; }
@@ -229,14 +228,19 @@ pre { background:#050505 !important; border:1px solid #222 !important; font-size
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   JERARQUÍA DE TABS ANIDADOS (nuevo)
-   El nivel 1 (fila de arriba: OVERVIEW/ARGENTINA/.../MACRO US) queda igual.
-   A partir de acá se diferencian los niveles anidados por profundidad real
-   de DOM (stTabsContent dentro de stTabsContent), sin tocar Python.
+   JERARQUÍA DE TABS ANIDADOS
+   El nivel 1 (fila de arriba: OVERVIEW/ARGENTINA/.../MACRO US) queda igual
+   (regla base de stTab más arriba). A partir de acá se diferencian los
+   niveles anidados por profundidad real de DOM — Streamlit envuelve cada
+   nivel de tabs en un stTabPanel, así que contamos stTabPanel ancestros.
+   FIX: la versión de Streamlit que corre esta app usa data-testid="stTab"
+   (no "stTabBar" / "stTabsContent" — esos nombres eran de una versión
+   vieja y por eso ninguna regla de tabs, ni la original ni la nueva,
+   se estaba aplicando).
    ═══════════════════════════════════════════════════════════════════════ */
 
 /* Nivel 2 — ej. GDP / LABOR / INFLATION / RATES: más grande y espaciado */
-[data-testid="stTabsContent"] [data-testid="stTabBar"] button {
+[data-testid="stTabPanel"] [data-testid="stTab"] {
     font-size: 12px !important;
     padding: 6px 16px !important;
     height: 32px !important;
@@ -245,7 +249,7 @@ pre { background:#050505 !important; border:1px solid #222 !important; font-size
 
 /* Nivel 3 — ej. YIELD CURVE/FED CORRIDOR/..., drill-downs, JOLTS deep dive:
    toolbar tipo pill en su propio contenedor, ya no parece "otro tab más" */
-[data-testid="stTabsContent"] [data-testid="stTabsContent"] [data-testid="stTabBar"] {
+[data-testid="stTabPanel"] [data-testid="stTabPanel"] [data-testid="stTabs"] {
     display: inline-flex !important;
     width: auto !important;
     background: #0a0a0a !important;
@@ -255,7 +259,7 @@ pre { background:#050505 !important; border:1px solid #222 !important; font-size
     gap: 2px !important;
     margin-bottom: 4px !important;
 }
-[data-testid="stTabsContent"] [data-testid="stTabsContent"] [data-testid="stTabBar"] button {
+[data-testid="stTabPanel"] [data-testid="stTabPanel"] [data-testid="stTab"] {
     font-size: 10px !important;
     padding: 5px 11px !important;
     height: auto !important;
@@ -263,10 +267,10 @@ pre { background:#050505 !important; border:1px solid #222 !important; font-size
     border-bottom: none !important;
     color: #777 !important;
 }
-[data-testid="stTabsContent"] [data-testid="stTabsContent"] [data-testid="stTabBar"] button:hover {
+[data-testid="stTabPanel"] [data-testid="stTabPanel"] [data-testid="stTab"]:hover {
     background: #111 !important; color: #ccc !important;
 }
-[data-testid="stTabsContent"] [data-testid="stTabsContent"] [data-testid="stTabBar"] button[aria-selected="true"] {
+[data-testid="stTabPanel"] [data-testid="stTabPanel"] [data-testid="stTab"][aria-selected="true"] {
     background: rgba(255,102,0,0.14) !important;
     border-bottom: none !important;
     color: #ff6600 !important;
@@ -274,20 +278,20 @@ pre { background:#050505 !important; border:1px solid #222 !important; font-size
 
 /* Nivel 4 — ej. Snapshot/History/Spreads dentro de YIELD CURVE:
    el nivel más chico, formato de link subrayado, sin caja */
-[data-testid="stTabsContent"] [data-testid="stTabsContent"] [data-testid="stTabsContent"] [data-testid="stTabBar"] {
+[data-testid="stTabPanel"] [data-testid="stTabPanel"] [data-testid="stTabPanel"] [data-testid="stTabs"] {
     background: transparent !important;
     border: none !important;
     padding: 0 !important;
     gap: 14px !important;
     display: flex !important;
 }
-[data-testid="stTabsContent"] [data-testid="stTabsContent"] [data-testid="stTabsContent"] [data-testid="stTabBar"] button {
+[data-testid="stTabPanel"] [data-testid="stTabPanel"] [data-testid="stTabPanel"] [data-testid="stTab"] {
     font-size: 9px !important;
     padding: 2px 0 4px 0 !important;
     color: #555 !important;
     background: transparent !important;
 }
-[data-testid="stTabsContent"] [data-testid="stTabsContent"] [data-testid="stTabsContent"] [data-testid="stTabBar"] button[aria-selected="true"] {
+[data-testid="stTabPanel"] [data-testid="stTabPanel"] [data-testid="stTabPanel"] [data-testid="stTab"][aria-selected="true"] {
     background: transparent !important;
     color: #ff6600 !important;
     border-bottom: 2px solid #ff6600 !important;
