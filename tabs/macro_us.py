@@ -41,7 +41,7 @@ BLS_KEY  = "94e0e0f57c5e4d5397ba3898198927ae"
 # ═══════════════════════════════════════════════════════════════════════════════
 def _breadcrumb(section):
     st.markdown(
-        f'<div style="font-family:\'Courier New\',monospace;font-size:10px;'
+        f'<div style="font-family:\'Courier New\',monospace;font-size:12px;'
         f'letter-spacing:1.5px;margin-bottom:12px;color:#666;">'
         f'MACRO US <span style="color:#444">&rsaquo;</span> '
         f'<span style="color:{ORANGE};font-weight:bold">{section}</span></div>',
@@ -70,7 +70,7 @@ def _rangeselector():
             dict(count=2, label="2Y", step="year", stepmode="backward"),
             dict(step="all", label="MAX"),
         ]),
-        font=dict(size=9, color=MUTED, family="'Courier New',monospace"),
+        font=dict(size=10, color=MUTED, family="'Courier New',monospace"),
         bgcolor="#0a0a0a",
         activecolor="rgba(255,102,0,0.18)",
         bordercolor="#222",
@@ -87,17 +87,17 @@ def _layout(height=360):
         plot_bgcolor=BG2,
         font=dict(family="'Courier New', monospace", color=TEXT, size=11),
         xaxis=dict(gridcolor=GRID, linecolor=GRID, showgrid=False,
-                   tickfont=dict(size=9, color='#aaaaaa')),
+                   tickfont=dict(size=11, color='#aaaaaa')),
         yaxis=dict(gridcolor=GRID, linecolor=GRID, zeroline=True,
                    zerolinecolor="#333",
-                   tickfont=dict(size=9, color='#aaaaaa')),
+                   tickfont=dict(size=11, color='#aaaaaa')),
         hovermode="x unified",
         barmode="relative",
         height=height,
         margin=dict(l=55, r=20, t=30, b=36),
         legend=dict(
             bgcolor="rgba(0,0,0,0)",
-            font=dict(color=TEXT, size=9, family="Courier New"),
+            font=dict(color=TEXT, size=11, family="Courier New"),
             orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0,
         ),
     )
@@ -113,7 +113,7 @@ def _layout_sub(height=340):
         margin=dict(l=55, r=20, t=30, b=36),
         legend=dict(
             bgcolor="rgba(0,0,0,0)",
-            font=dict(color=TEXT, size=9, family="Courier New"),
+            font=dict(color=TEXT, size=11, family="Courier New"),
             orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0,
         ),
     )
@@ -121,14 +121,14 @@ def _layout_sub(height=340):
 def _style_sub_axes(fig, secondary=True):
     """Apply BBG grid style to all axes of a subplot figure."""
     ax_style = dict(gridcolor=GRID, linecolor=GRID, zeroline=False,
-                    tickfont=dict(size=9, color='#aaaaaa'), title_text=None,
+                    tickfont=dict(size=11, color='#aaaaaa'), title_text=None,
                     showgrid=True)
     fig.update_xaxes(**ax_style)
     fig.update_yaxes(**ax_style)
 
 def _sec(text):
     st.markdown(
-        f'<div style="color:{ORANGE};font-size:9px;font-weight:bold;letter-spacing:2px;'
+        f'<div style="color:{ORANGE};font-size:11px;font-weight:bold;letter-spacing:2px;'
         f'text-transform:uppercase;border-bottom:1px solid #333;padding-bottom:3px;'
         f'margin:18px 0 6px 0;font-family:\'Courier New\',monospace">{text}</div>',
         unsafe_allow_html=True
@@ -448,7 +448,7 @@ def _render_gdp():
     dtabs = st.tabs(["Consumption", "Investment", "Government", "Net Exports", "Final Sales"])
     def _sub(text):
         st.markdown(
-            f'<div style="font-family:Courier New,monospace;font-size:9px;'
+            f'<div style="font-family:Courier New,monospace;font-size:11px;'
             f'color:#777;margin:4px 0 0 0;padding:0;line-height:1.4">{text}</div>',
             unsafe_allow_html=True
         )
@@ -457,7 +457,7 @@ def _render_gdp():
         lay["margin"] = dict(l=55, r=20, t=36, b=36)
         lay["legend"] = dict(
             bgcolor="rgba(0,0,0,0)",
-            font=dict(color=TEXT, size=9, family="Courier New"),
+            font=dict(color=TEXT, size=11, family="Courier New"),
             orientation="h",
             yanchor="bottom", y=1.0,
             xanchor="left", x=0,
@@ -536,8 +536,8 @@ def _render_gdp():
         elif v > -2.0: return "#2a0606","#f87171"
         else:          return "#3d0808","#ef4444"
     T  = "font-family:'Courier New',monospace;"
-    TH = f"padding:4px 10px;{T}font-size:9px;font-weight:bold;letter-spacing:1px;color:#666;background:#0d0d0d;border-bottom:1px solid #333;border-right:1px solid #1a1a1a;text-align:center;white-space:nowrap;"
-    TH0= f"padding:4px 12px;{T}font-size:9px;font-weight:bold;letter-spacing:1px;color:#666;background:#0d0d0d;border-bottom:1px solid #333;border-right:1px solid #333;text-align:left;min-width:150px;"
+    TH = f"padding:4px 10px;{T}font-size:11px;font-weight:bold;letter-spacing:1px;color:#666;background:#0d0d0d;border-bottom:1px solid #333;border-right:1px solid #1a1a1a;text-align:center;white-space:nowrap;"
+    TH0= f"padding:4px 12px;{T}font-size:11px;font-weight:bold;letter-spacing:1px;color:#666;background:#0d0d0d;border-bottom:1px solid #333;border-right:1px solid #333;text-align:left;min-width:150px;"
     hdr = f'<tr><th style="{TH0}">SERIES</th>' + "".join(f'<th style="{TH}">{q}</th>' for q in ql8) + "</tr>"
     rows_html = ""
     for i,(label, s, indented) in enumerate(series_map_ordered):
@@ -546,12 +546,12 @@ def _render_gdp():
         top_bdr  = "border-top:1px solid #2a2a2a;" if is_top and i > 0 else ""
         fw       = "font-weight:bold;" if is_top else "font-weight:normal;"
         ind_px   = "padding-left:22px;" if indented else "padding-left:12px;"
-        name_td  = f"padding:3px 10px;{T}font-size:10px;{fw}{ind_px}color:#ccc;background:#000;border-right:1px solid #333;{top_bdr}white-space:nowrap;"
+        name_td  = f"padding:3px 10px;{T}font-size:12px;{fw}{ind_px}color:#ccc;background:#000;border-right:1px solid #333;{top_bdr}white-space:nowrap;"
         rows_html += f'<tr><td style="{name_td}">{label.strip()}</td>'
         for v in vals:
             bg, fg = _cell_bg_fg(v)
             sign   = "+" if v >= 0 else ""
-            td     = f"padding:3px 10px;{T}font-size:10px;font-weight:bold;text-align:right;background:{bg};color:{fg};border-right:1px solid #111;{top_bdr}white-space:nowrap;"
+            td     = f"padding:3px 10px;{T}font-size:12px;font-weight:bold;text-align:right;background:{bg};color:{fg};border-right:1px solid #111;{top_bdr}white-space:nowrap;"
             rows_html += f'<td style="{td}">{sign}{v:.2f}</td>'
         rows_html += "</tr>"
     st.markdown(f"""
@@ -561,7 +561,7 @@ def _render_gdp():
         <tbody>{rows_html}</tbody>
       </table>
     </div>
-    <div style="color:#444;font-size:9px;{T}margin-bottom:10px;">
+    <div style="color:#444;font-size:11px;{T}margin-bottom:10px;">
       BEA NIPA Table 1.1.2 &nbsp;·&nbsp; Quarterly annualized rates &nbsp;·&nbsp; Contributions in pp
     </div>""", unsafe_allow_html=True)
 
@@ -702,20 +702,21 @@ def _render_labor():
     fig_sec.add_hline(y=0, line_color="#333", line_width=1)
     lay_sec = _layout(480)
     lay_sec["barmode"] = "relative"
-    lay_sec["margin"] = dict(l=55, r=20, t=72, b=36)
+    lay_sec["margin"] = dict(l=55, r=20, t=110, b=36)
     lay_sec["legend"] = dict(
         bgcolor="rgba(0,0,0,0)",
-        font=dict(color=TEXT, size=9, family="Courier New"),
+        font=dict(color=TEXT, size=11, family="Courier New"),
         orientation="h",
         yanchor="bottom", y=1.02,
         xanchor="left", x=0,
-        tracegroupgap=2,
-        entrywidth=130,
+        tracegroupgap=6,
+        entrywidth=145,
+        entrywidthmode="pixels",
     )
     fig_sec.update_layout(**lay_sec)
     st.plotly_chart(fig_sec, use_container_width=True, config=PLOTLY_CFG)
     st.markdown(
-        f'<div style="color:{MUTED};font-size:9px;margin:-8px 0 8px 0;font-family:\'Courier New\',monospace">'
+        f'<div style="color:{MUTED};font-size:11px;margin:-8px 0 8px 0;font-family:\'Courier New\',monospace">'
         f'6 sectores menores empiezan ocultos — clic en la leyenda para mostrarlos.</div>',
         unsafe_allow_html=True
     )
@@ -738,8 +739,8 @@ def _render_labor():
             else:           bg,fg = "#3d0808","#ef4444"
             return bg, fg
         T2 = "font-family:'Courier New',monospace;"
-        TH2  = f"padding:4px 10px;{T2}font-size:9px;font-weight:bold;color:#666;background:#0d0d0d;border-bottom:1px solid #333;border-right:1px solid #1a1a1a;text-align:center;white-space:nowrap;"
-        TH2a = f"padding:4px 12px;{T2}font-size:9px;font-weight:bold;color:#666;background:#0d0d0d;border-bottom:1px solid #333;border-right:1px solid #333;text-align:left;min-width:160px;"
+        TH2  = f"padding:4px 10px;{T2}font-size:11px;font-weight:bold;color:#666;background:#0d0d0d;border-bottom:1px solid #333;border-right:1px solid #1a1a1a;text-align:center;white-space:nowrap;"
+        TH2a = f"padding:4px 12px;{T2}font-size:11px;font-weight:bold;color:#666;background:#0d0d0d;border-bottom:1px solid #333;border-right:1px solid #333;text-align:left;min-width:160px;"
         hdr2 = f'<tr><th style="{TH2a}">SERIES</th>'
         for cl in col_labels:
             hdr2 += f'<th style="{TH2}">{cl}</th>'
@@ -748,15 +749,15 @@ def _render_labor():
         for label, info in heat_data.items():
             color = info["color"]
             vals  = [info["series"].get(d, float("nan")) for d in col_dates]
-            name_td = f"padding:3px 12px;{T2}font-size:10px;font-weight:bold;color:{color};background:#000;border-right:1px solid #333;white-space:nowrap;"
+            name_td = f"padding:3px 12px;{T2}font-size:12px;font-weight:bold;color:{color};background:#000;border-right:1px solid #333;white-space:nowrap;"
             body2 += f'<tr><td style="{name_td}">{label}</td>'
             for v in vals:
                 if pd.isna(v):
-                    body2 += f'<td style="padding:3px 10px;{T2}font-size:10px;text-align:right;background:#0a0a0a;color:#333;border-right:1px solid #111;">—</td>'
+                    body2 += f'<td style="padding:3px 10px;{T2}font-size:12px;text-align:right;background:#0a0a0a;color:#333;border-right:1px solid #111;">—</td>'
                 else:
                     bg, fg = _td_style(v)
                     sign   = "+" if v >= 0 else ""
-                    td2    = f"padding:3px 10px;{T2}font-size:10px;font-weight:bold;text-align:right;background:{bg};color:{fg};border-right:1px solid #111;white-space:nowrap;"
+                    td2    = f"padding:3px 10px;{T2}font-size:12px;font-weight:bold;text-align:right;background:{bg};color:{fg};border-right:1px solid #111;white-space:nowrap;"
                     body2 += f'<td style="{td2}">{sign}{v:.0f}K</td>'
             body2 += "</tr>"
         st.markdown(f"""
@@ -766,7 +767,7 @@ def _render_labor():
             <tbody>{body2}</tbody>
           </table>
         </div>
-        <div style="color:#444;font-size:9px;{T2}margin-bottom:10px;">
+        <div style="color:#444;font-size:11px;{T2}margin-bottom:10px;">
           BLS CES &nbsp;·&nbsp; Monthly net change in thousands &nbsp;·&nbsp; Seasonally adjusted
         </div>""", unsafe_allow_html=True)
     _sec("UNEMPLOYMENT & LABOR FORCE PARTICIPATION")
@@ -830,7 +831,7 @@ def _render_labor():
                                 colorscale=[[0,"#1e3a5f"],[0.5,BLUE],[1,CYAN]],
                                 showscale=True,
                                 colorbar=dict(thickness=8, len=0.5,
-                                              tickfont=dict(color=MUTED,size=8))),
+                                              tickfont=dict(color=MUTED,size=10))),
                     hovertemplate="<b>%{customdata}</b><br>U: %{x:.1f}%<br>Openings: %{y:.2f}M<extra></extra>",
                     customdata=[d.strftime("%b %Y") for d in common_idx],
                 ))
@@ -876,7 +877,7 @@ def _render_labor():
             fig_ov.update_layout(**_layout_sub(360))
             _style_sub_axes(fig_ov)
             st.plotly_chart(fig_ov, use_container_width=True, config=PLOTLY_CFG)
-    st.markdown(f'<div style="color:{MUTED};font-size:9px;margin-top:6px;font-family:\'Courier New\',monospace">Sources: BLS CES (payrolls, wages) · BLS CPS (unemployment, participation) · FRED JOLTS</div>', unsafe_allow_html=True)
+    st.markdown(f'<div style="color:{MUTED};font-size:11px;margin-top:6px;font-family:\'Courier New\',monospace">Sources: BLS CES (payrolls, wages) · BLS CPS (unemployment, participation) · FRED JOLTS</div>', unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  TAB: INFLATION  —  2Y fixed
@@ -1063,7 +1064,7 @@ def _render_inflation():
                 ))
         fig4b.update_layout(**_layout(300))
         st.plotly_chart(fig4b, use_container_width=True, config=PLOTLY_CFG)
-    st.markdown(f'<div style="color:{MUTED};font-size:9px;margin-top:8px;font-family:\'Courier New\',monospace">Sources: BLS (CPI CUUR series) · FRED (PCE, TIPS breakevens, Michigan Survey)</div>', unsafe_allow_html=True)
+    st.markdown(f'<div style="color:{MUTED};font-size:11px;margin-top:8px;font-family:\'Courier New\',monospace">Sources: BLS (CPI CUUR series) · FRED (PCE, TIPS breakevens, Michigan Survey)</div>', unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  TAB: RATES  —  2Y fixed default
@@ -1373,13 +1374,13 @@ def _render_fedwatch():
         marker=dict(size=8, color=ORANGE, line=dict(color=BG2, width=1.5)),
         text=[f"{r:.2f}%" for r in rates_now],
         textposition="top center",
-        textfont=dict(size=8, color=GOLD, family="'Courier New',monospace"),
+        textfont=dict(size=10, color=GOLD, family="'Courier New',monospace"),
         hovertemplate="<b>%{x}</b><br>Tasa implícita: <b>%{y:.2f}%</b><extra></extra>",
     ))
     fig_fw.add_hline(
         y=front_rate, line_dash="dot", line_color=AMBER,
         annotation_text=f"Próx. meeting {front_rate:.2f}%",
-        annotation_font=dict(size=8, color=AMBER, family="'Courier New',monospace"),
+        annotation_font=dict(size=10, color=AMBER, family="'Courier New',monospace"),
         annotation_position="bottom right",
     )
     lay_fw = _layout(360)
@@ -1394,8 +1395,8 @@ def _render_fedwatch():
     st.plotly_chart(fig_fw, use_container_width=True, config=PLOTLY_CFG)
     _sec("TABLA — CURVA IMPLÍCITA POR MEETING")
     T3     = "font-family:'Courier New',monospace;"
-    TH_s   = f"padding:4px 10px;{T3}font-size:9px;color:#666;background:#0d0d0d;border-bottom:1px solid #333;border-right:1px solid #1a1a1a;text-align:center;"
-    TH0_s  = f"padding:4px 10px;{T3}font-size:9px;color:#666;background:#0d0d0d;border-bottom:1px solid #333;border-right:1px solid #333;text-align:left;"
+    TH_s   = f"padding:4px 10px;{T3}font-size:11px;color:#666;background:#0d0d0d;border-bottom:1px solid #333;border-right:1px solid #1a1a1a;text-align:center;"
+    TH0_s  = f"padding:4px 10px;{T3}font-size:11px;color:#666;background:#0d0d0d;border-bottom:1px solid #333;border-right:1px solid #333;text-align:left;"
     hdr    = (f'<tr>'
               f'<th style="{TH0_s}">MEETING</th>'
               f'<th style="{TH_s}">CONTRATO</th>'
@@ -1421,12 +1422,12 @@ def _render_fedwatch():
         chg_s   = f'<span style="color:{chg_col};font-weight:bold">{chg_bp:+.1f}</span>'
         bg_row  = "#000" if i % 2 == 0 else "#060606"
         body   += (f'<tr>'
-                   f'<td style="padding:3px 10px;{T3}font-size:10px;color:#ccc;background:{bg_row};border-right:1px solid #1a1a1a;">{lbl}</td>'
-                   f'<td style="padding:3px 10px;{T3}font-size:9px;color:{MUTED};background:{bg_row};border-right:1px solid #1a1a1a;text-align:center;">{sym}</td>'
-                   f'<td style="padding:3px 10px;{T3}font-size:10px;text-align:right;background:{bg_row};border-right:1px solid #1a1a1a;">{rate_s}</td>'
-                   f'<td style="padding:3px 10px;{T3}font-size:10px;text-align:right;background:{bg_row};border-right:1px solid #1a1a1a;">{delta_s}</td>'
-                   f'<td style="padding:3px 10px;{T3}font-size:10px;text-align:right;background:{bg_row};border-right:1px solid #1a1a1a;">{chg_s}</td>'
-                   f'<td style="padding:3px 10px;{T3}font-size:9px;color:{MUTED};text-align:right;background:{bg_row};">{vol_s}</td>'
+                   f'<td style="padding:3px 10px;{T3}font-size:12px;color:#ccc;background:{bg_row};border-right:1px solid #1a1a1a;">{lbl}</td>'
+                   f'<td style="padding:3px 10px;{T3}font-size:11px;color:{MUTED};background:{bg_row};border-right:1px solid #1a1a1a;text-align:center;">{sym}</td>'
+                   f'<td style="padding:3px 10px;{T3}font-size:12px;text-align:right;background:{bg_row};border-right:1px solid #1a1a1a;">{rate_s}</td>'
+                   f'<td style="padding:3px 10px;{T3}font-size:12px;text-align:right;background:{bg_row};border-right:1px solid #1a1a1a;">{delta_s}</td>'
+                   f'<td style="padding:3px 10px;{T3}font-size:12px;text-align:right;background:{bg_row};border-right:1px solid #1a1a1a;">{chg_s}</td>'
+                   f'<td style="padding:3px 10px;{T3}font-size:11px;color:{MUTED};text-align:right;background:{bg_row};">{vol_s}</td>'
                    f'</tr>')
     st.markdown(
         f'<div style="overflow-x:auto;border:1px solid #2a2a2a;background:#000;margin-bottom:8px;">'
@@ -1475,7 +1476,7 @@ def _render_fedwatch():
                         line=dict(color=BG2, width=1)),
             text=[f"{r:.2f}%" for r in rate_c] if is_today else None,
             textposition="top center" if is_today else None,
-            textfont=dict(size=8, color=GOLD, family="'Courier New',monospace"),
+            textfont=dict(size=10, color=GOLD, family="'Courier New',monospace"),
             hovertemplate=(
                 f"<b>{label}</b> · %{{x}}<br>"
                 f"Tasa: <b>%{{y:.2f}}%</b><extra></extra>"
@@ -1492,15 +1493,15 @@ def _render_fedwatch():
         lay_h["showlegend"]          = True
         lay_h["legend"] = dict(
             bgcolor="rgba(0,0,0,0)",
-            font=dict(color=TEXT, size=9, family="'Courier New',monospace"),
+            font=dict(color=TEXT, size=11, family="'Courier New',monospace"),
             orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0,
         )
         fig_hist.update_layout(**lay_h)
         st.plotly_chart(fig_hist, use_container_width=True, config=PLOTLY_CFG)
     if len(kpi_rows) >= 2:
         T3    = "font-family:'Courier New',monospace;"
-        TH_s  = f"padding:4px 12px;{T3}font-size:9px;color:#666;background:#0d0d0d;border-bottom:1px solid #333;border-right:1px solid #1a1a1a;text-align:center;"
-        TH0_s = f"padding:4px 12px;{T3}font-size:9px;color:#666;background:#0d0d0d;border-bottom:1px solid #333;border-right:1px solid #333;text-align:left;"
+        TH_s  = f"padding:4px 12px;{T3}font-size:11px;color:#666;background:#0d0d0d;border-bottom:1px solid #333;border-right:1px solid #1a1a1a;text-align:center;"
+        TH0_s = f"padding:4px 12px;{T3}font-size:11px;color:#666;background:#0d0d0d;border-bottom:1px solid #333;border-right:1px solid #333;text-align:left;"
         hdr_hist = (
             f'<tr>'
             f'<th style="{TH0_s}">SNAPSHOT</th>'
@@ -1524,7 +1525,7 @@ def _render_fedwatch():
             dc_t = MUTED if i == 0 else (GREEN if dt_ < -0.005 else (RED if dt_ > 0.005 else MUTED))
             df_s = "—" if i == 0 else f'<span style="color:{dc_f};font-weight:bold">{df_*100:+.1f}bp</span>'
             dt_s = "—" if i == 0 else f'<span style="color:{dc_t};font-weight:bold">{dt_*100:+.1f}bp</span>'
-            td   = f"padding:4px 12px;{T3}font-size:10px;background:{bg};border-right:1px solid #1a1a1a;"
+            td   = f"padding:4px 12px;{T3}font-size:12px;background:{bg};border-right:1px solid #1a1a1a;"
             body_hist += (
                 f'<tr>'
                 f'<td style="{td}color:{c};font-weight:bold">{row["label"]}</td>'
@@ -1545,7 +1546,7 @@ def _render_fedwatch():
     elif not has_data:
         st.info("No hay datos históricos ZQ disponibles desde Yahoo Finance en este momento.")
     st.markdown(
-        f'<div style="color:{MUTED};font-size:9px;font-family:\'Courier New\',monospace;margin-top:4px;">'
+        f'<div style="color:{MUTED};font-size:11px;font-family:\'Courier New\',monospace;margin-top:4px;">'
         f'Fuente: CME 30-Day Fed Funds Futures (ZQ) vía Barchart.com (actual) · Yahoo Finance CBT (historia) &nbsp;·&nbsp; '
         f'Metodología: tasa implícita = 100 − precio settle &nbsp;·&nbsp; Cache: 60 min</div>',
         unsafe_allow_html=True,
@@ -1631,8 +1632,8 @@ def _render_rates():
             st.plotly_chart(fig_yc, use_container_width=True, config=PLOTLY_CFG)
             _sec("TENOR SNAPSHOT")
             T = "font-family:'Courier New',monospace;"
-            th_s = f"padding:4px 12px;{T}font-size:9px;color:#666;background:#0d0d0d;border-bottom:1px solid #333;border-right:1px solid #1a1a1a;text-align:center;white-space:nowrap;"
-            th0  = f"padding:4px 12px;{T}font-size:9px;color:#666;background:#0d0d0d;border-bottom:1px solid #333;border-right:1px solid #333;text-align:left;min-width:80px;"
+            th_s = f"padding:4px 12px;{T}font-size:11px;color:#666;background:#0d0d0d;border-bottom:1px solid #333;border-right:1px solid #1a1a1a;text-align:center;white-space:nowrap;"
+            th0  = f"padding:4px 12px;{T}font-size:11px;color:#666;background:#0d0d0d;border-bottom:1px solid #333;border-right:1px solid #333;text-align:left;min-width:80px;"
             hdr_yc = f'<tr><th style="{th0}">TENOR</th>'
             for col in ["CURRENT","3M AGO","1Y AGO","CHG 3M","CHG 1Y"]:
                 hdr_yc += f'<th style="{th_s}">{col}</th>'
@@ -1644,14 +1645,14 @@ def _render_rates():
                 chg3 = cur - m3 if m3 else float("nan")
                 chgy = cur - y1 if y1 else float("nan")
                 def _td_chg(v):
-                    if pd.isna(v): return f'<td style="padding:3px 10px;{T}font-size:10px;text-align:right;background:#0a0a0a;color:#444;border-right:1px solid #111;">—</td>'
+                    if pd.isna(v): return f'<td style="padding:3px 10px;{T}font-size:12px;text-align:right;background:#0a0a0a;color:#444;border-right:1px solid #111;">—</td>'
                     bg = "#062910" if v < -0.1 else ("#2a0606" if v > 0.1 else "#0a0a0a")
                     fg = "#34d399" if v < -0.1 else ("#f87171" if v > 0.1 else "#888")
-                    return f'<td style="padding:3px 10px;{T}font-size:10px;font-weight:bold;text-align:right;background:{bg};color:{fg};border-right:1px solid #111;">{v:+.2f}%</td>'
-                nm = f'<td style="padding:3px 12px;{T}font-size:10px;font-weight:bold;color:{CYAN};background:#000;border-right:1px solid #333;">{tenor}</td>'
-                vc = f'<td style="padding:3px 10px;{T}font-size:10px;font-weight:bold;text-align:right;background:#0a0a0a;color:{GOLD};border-right:1px solid #111;">{cur:.2f}%</td>'
-                v3 = f'<td style="padding:3px 10px;{T}font-size:10px;text-align:right;background:#000;color:#aaa;border-right:1px solid #111;">{m3:.2f}%</td>' if m3 else f'<td style="padding:3px 10px;{T}font-size:10px;text-align:right;background:#000;color:#444;border-right:1px solid #111;">—</td>'
-                v1 = f'<td style="padding:3px 10px;{T}font-size:10px;text-align:right;background:#000;color:#888;border-right:1px solid #111;">{y1:.2f}%</td>' if y1 else f'<td style="padding:3px 10px;{T}font-size:10px;text-align:right;background:#000;color:#444;border-right:1px solid #111;">—</td>'
+                    return f'<td style="padding:3px 10px;{T}font-size:12px;font-weight:bold;text-align:right;background:{bg};color:{fg};border-right:1px solid #111;">{v:+.2f}%</td>'
+                nm = f'<td style="padding:3px 12px;{T}font-size:12px;font-weight:bold;color:{CYAN};background:#000;border-right:1px solid #333;">{tenor}</td>'
+                vc = f'<td style="padding:3px 10px;{T}font-size:12px;font-weight:bold;text-align:right;background:#0a0a0a;color:{GOLD};border-right:1px solid #111;">{cur:.2f}%</td>'
+                v3 = f'<td style="padding:3px 10px;{T}font-size:12px;text-align:right;background:#000;color:#aaa;border-right:1px solid #111;">{m3:.2f}%</td>' if m3 else f'<td style="padding:3px 10px;{T}font-size:12px;text-align:right;background:#000;color:#444;border-right:1px solid #111;">—</td>'
+                v1 = f'<td style="padding:3px 10px;{T}font-size:12px;text-align:right;background:#000;color:#888;border-right:1px solid #111;">{y1:.2f}%</td>' if y1 else f'<td style="padding:3px 10px;{T}font-size:12px;text-align:right;background:#000;color:#444;border-right:1px solid #111;">—</td>'
                 body_yc += f"<tr>{nm}{vc}{v3}{v1}{_td_chg(chg3)}{_td_chg(chgy)}</tr>"
             st.markdown(f"""
             <div style="overflow-x:auto;border:1px solid #2a2a2a;background:#000;margin-bottom:8px;">
@@ -1838,8 +1839,8 @@ def _render_rates():
             ("USD Index",       "dollar",     "idx"),
         ]
         T2 = "font-family:'Courier New',monospace;"
-        TH  = f"padding:4px 10px;{T2}font-size:9px;font-weight:bold;color:#666;background:#0d0d0d;border-bottom:1px solid #333;border-right:1px solid #1a1a1a;text-align:center;white-space:nowrap;"
-        TH0 = f"padding:4px 12px;{T2}font-size:9px;font-weight:bold;color:#666;background:#0d0d0d;border-bottom:1px solid #333;border-right:1px solid #333;text-align:left;min-width:160px;"
+        TH  = f"padding:4px 10px;{T2}font-size:11px;font-weight:bold;color:#666;background:#0d0d0d;border-bottom:1px solid #333;border-right:1px solid #1a1a1a;text-align:center;white-space:nowrap;"
+        TH0 = f"padding:4px 12px;{T2}font-size:11px;font-weight:bold;color:#666;background:#0d0d0d;border-bottom:1px solid #333;border-right:1px solid #333;text-align:left;min-width:160px;"
         hdr_s = f'<tr><th style="{TH0}">INSTRUMENT</th>'
         for col in ["CURRENT","1W Δ","1M Δ","3M Δ","1Y Δ"]:
             hdr_s += f'<th style="{TH}">{col}</th>'
@@ -1857,7 +1858,7 @@ def _render_rates():
             if kind in ("vix","idx"): return f"{v:+.1f}"
             return f"{v:+.2f}%"
         def _snap_delta_style(v, kind):
-            if pd.isna(v): return f"padding:3px 10px;{T2}font-size:10px;text-align:right;background:#0a0a0a;color:#333;border-right:1px solid #111;white-space:nowrap;"
+            if pd.isna(v): return f"padding:3px 10px;{T2}font-size:12px;text-align:right;background:#0a0a0a;color:#333;border-right:1px solid #111;white-space:nowrap;"
             raw = v * 100 if kind == "oas" else v
             thr = 0.5 if kind not in ("vix","idx","nfci") else (3 if kind=="vix" else 1)
             if raw > thr:    bg,fg = "#2a0606","#f87171"
@@ -1865,7 +1866,7 @@ def _render_rates():
             elif raw < -thr: bg,fg = "#062910","#34d399"
             elif raw < -0.05:bg,fg = "#041a0a","#6ee7b7"
             else:             bg,fg = "#0a0a0a","#666"
-            return f"padding:3px 10px;{T2}font-size:10px;font-weight:bold;text-align:right;background:{bg};color:{fg};border-right:1px solid #111;white-space:nowrap;"
+            return f"padding:3px 10px;{T2}font-size:12px;font-weight:bold;text-align:right;background:{bg};color:{fg};border-right:1px solid #111;white-space:nowrap;"
         body_s = ""
         for label, key, kind in snap_map:
             s = D[key].dropna()
@@ -1873,8 +1874,8 @@ def _render_rates():
             deltas = []
             for days in [5, 22, 63, 252]:
                 deltas.append(float(s.iloc[-1] - s.iloc[-days]) if len(s) > days else float("nan"))
-            nm_td = f'<td style="padding:3px 12px;{T2}font-size:10px;font-weight:bold;color:#ccc;background:#000;border-right:1px solid #333;white-space:nowrap;">{label}</td>'
-            cv_td = f'<td style="padding:3px 10px;{T2}font-size:10px;font-weight:bold;text-align:right;background:#0a0a0a;color:{GOLD};border-right:1px solid #111;white-space:nowrap;">{_snap_fmtc(kind, cur)}</td>'
+            nm_td = f'<td style="padding:3px 12px;{T2}font-size:12px;font-weight:bold;color:#ccc;background:#000;border-right:1px solid #333;white-space:nowrap;">{label}</td>'
+            cv_td = f'<td style="padding:3px 10px;{T2}font-size:12px;font-weight:bold;text-align:right;background:#0a0a0a;color:{GOLD};border-right:1px solid #111;white-space:nowrap;">{_snap_fmtc(kind, cur)}</td>'
             d_tds = "".join(f'<td style="{_snap_delta_style(d, kind)}">{_snap_fmtd(kind, d)}</td>' for d in deltas)
             body_s += f"<tr>{nm_td}{cv_td}{d_tds}</tr>"
         st.markdown(f"""
@@ -1883,7 +1884,7 @@ def _render_rates():
             <thead>{hdr_s}</thead><tbody>{body_s}</tbody>
           </table>
         </div>
-        <div style="color:#444;font-size:9px;{T2}margin-bottom:10px;">
+        <div style="color:#444;font-size:11px;{T2}margin-bottom:10px;">
           FRED &nbsp;·&nbsp; US Treasury &nbsp;·&nbsp; OAS in basis points (BAML ×100) &nbsp;·&nbsp; Red = rising rate / Green = falling
         </div>""", unsafe_allow_html=True)
 
