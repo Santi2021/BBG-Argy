@@ -7,6 +7,7 @@ MUNDO — 9-Panel Grid (equity-focused)
 import streamlit as st
 import yfinance as yf
 import pandas as pd
+import numpy as np
 import requests
 import re
 import plotly.graph_objects as go
@@ -733,6 +734,47 @@ def _axis_auto_range(series: pd.Series, lo_pct: float = 0.02, hi_pct: float = 0.
     return lo - span * pad, hi + span * pad
 
 
+def _sector_color_map(sectors: list) -> dict:
+    """Mapea cada sector a un color fijo (orden alfabético sobre la paleta de
+    12), para que el color de cada sector sea IDÉNTICO en el scatter de
+    burbujas y en el chart de tendencias — si no, Plotly podría asignar
+    colores distintos a cada figura porque arma la paleta en el orden en que
+    aparecen las categorías en cada dataset."""
+    ordered = sorted(sectors)
+    return {s: _SECTOR_COLORS[i % len(_SECTOR_COLORS)] for i, s in enumerate(ordered)}
+
+
+_MIN_SECTOR_N = 3  # mínimo de empresas en un sector para calcularle una recta de tendencia
+
+
+def _sector_trend_lines(df: pd.DataFrame, x_col: str, y_col: str, x_range: tuple):
+    """
+    Para cada sector con >= _MIN_SECTOR_N empresas, ajusta una recta de
+    regresión lineal (mínimos cuadrados) entre x_col e y_col y la extiende
+    a lo largo de todo x_range — así todas las rectas quedan comparables
+    en el mismo ancho de gráfico, sea cual sea el rango real de cada sector.
+    Devuelve (dict sector -> (x0, x1, y0, y1, n_empresas), list sectores excluidos).
+    """
+    lines = {}
+    excluded = []
+    x_lo, x_hi = x_range
+    for sector, g in df.groupby("Sector"):
+        xs = g[x_col].to_numpy(dtype=float)
+        ys = g[y_col].to_numpy(dtype=float)
+        if len(xs) < _MIN_SECTOR_N:
+            excluded.append(sector)
+            continue
+        try:
+            slope, intercept = np.polyfit(xs, ys, 1)
+        except Exception:
+            excluded.append(sector)
+            continue
+        y_lo = intercept + slope * x_lo
+        y_hi = intercept + slope * x_hi
+        lines[sector] = (x_lo, x_hi, y_lo, y_hi, len(xs))
+    return lines, excluded
+
+
 def _render_cuadrantes():
     st.markdown(_SUBNAV_CSS, unsafe_allow_html=True)
 
@@ -852,11 +894,13 @@ def _render_cuadrantes():
             unsafe_allow_html=True
         )
 
+    sec_colors = _sector_color_map(plot_df["Sector"].dropna().unique().tolist())
+
     fig = px.scatter(
         plot_df, x=x_col, y=y_col,
         size="Market Cap", color="Sector",
         size_max=38,
-        color_discrete_sequence=_SECTOR_COLORS,
+        color_discrete_map=sec_colors,
         custom_data=["Ticker", "Company", "Market Cap"],
     )
     fig.update_traces(
@@ -913,6 +957,74 @@ def _render_cuadrantes():
         '</div>',
         unsafe_allow_html=True
     )
+
+    # ─── Chart 2: TENDENCIA POR SECTOR — una recta de regresión por sector,
+    # mismos ejes X/Y, para ver de un vistazo cómo se relacionan las dos
+    # métricas EN PROMEDIO dentro de cada sector (sin el ruido de 800+
+    # burbujas individuales encima).
+    _render_section_title("TENDENCIA POR SECTOR")
+
+    trend_lines, excluded_sectors = _sector_trend_lines(plot_df, x_col, y_col, (x_min, x_max))
+
+    if not trend_lines:
+        st.markdown(
+            '<p style="color:#555;font-family:Courier New;font-size:11px">'
+            f'Ningún sector tiene al menos {_MIN_SECTOR_N} empresas en esta selección — '
+            'probá sacar el filtro de sector o cambiar los ejes.</p>',
+            unsafe_allow_html=True
+        )
+    else:
+        fig2 = go.Figure()
+        for sector, (x0, x1, y0, y1, n) in sorted(trend_lines.items(), key=lambda kv: -kv[1][4]):
+            color = sec_colors.get(sector, "#888")
+            fig2.add_trace(go.Scatter(
+                x=[x0, x1], y=[y0, y1],
+                mode="lines",
+                name=f"{sector} (n={n})",
+                line=dict(color=color, width=2.5),
+                hovertemplate=f"<b>{sector}</b> · n={n}<br>{x_label}: %{{x:.1f}}{x_suffix}<br>{y_label}: %{{y:.1f}}{y_suffix}<extra></extra>",
+            ))
+
+        fig2.update_layout(
+            paper_bgcolor="#000", plot_bgcolor="#000",
+            font=dict(family="Courier New", size=9, color="#555"),
+            margin=dict(l=50, r=20, t=20, b=45),
+            height=420,
+            xaxis=dict(
+                title=dict(text=x_label.upper(), font=dict(size=9, color="#888")),
+                gridcolor="#111", linecolor="#333", zerolinecolor="#222",
+                tickfont=dict(size=9, color="#ccc", family="Courier New"),
+                ticksuffix=x_suffix,
+                range=[x_min, x_max],
+            ),
+            yaxis=dict(
+                title=dict(text=y_label.upper(), font=dict(size=9, color="#888")),
+                gridcolor="#111", linecolor="#333", zerolinecolor="#222",
+                tickfont=dict(size=9, color="#ccc", family="Courier New"),
+                ticksuffix=y_suffix,
+                range=[y_min, y_max],
+            ),
+            legend=dict(
+                bgcolor="rgba(0,0,0,0.7)", bordercolor="#333", borderwidth=1,
+                font=dict(size=9, color="#ccc", family="Courier New"),
+                orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0,
+            ),
+            hoverlabel=dict(
+                bgcolor="#111", bordercolor="#ff6600",
+                font=dict(family="Courier New", size=9, color="#fff"),
+            ),
+        )
+        st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})
+
+        excl_note = f' · SECTORES EXCLUIDOS (< {_MIN_SECTOR_N} EMPRESAS): {", ".join(sorted(excluded_sectors))}' if excluded_sectors else ""
+        st.markdown(
+            f'<div style="color:#555;font-size:9px;font-family:Courier New;'
+            f'padding:6px 0;border-top:1px solid #1a1a1a;margin-top:6px">'
+            f'CADA RECTA = REGRESIÓN LINEAL DE {x_label.upper()} VS {y_label.upper()} DENTRO DE ESE SECTOR '
+            f'(n = cantidad de empresas){excl_note}'
+            f'</div>',
+            unsafe_allow_html=True
+        )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
