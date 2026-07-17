@@ -1154,37 +1154,62 @@ def _cal_fmt_num(val, unit, precision):
     return f"{s}{unit or ''}"
 
 
+_CAL_JSON_HEADER_VARIANTS = [
+    ("sin headers",       {}),
+    ("UA genérico honesto", {
+        "User-Agent": "BBG-ArgTerminal/1.0 (+https://github.com/Santi2021/BBG-Argy)",
+    }),
+    ("UA de navegador (sin Referer/Origin)", {
+        "User-Agent": HEADERS["User-Agent"],
+        "Accept":     "application/json",
+    }),
+    ("navegador completo con Referer/Origin", {
+        "User-Agent": HEADERS["User-Agent"],
+        "Accept":     "application/json",
+        "Referer":    "https://www.investing.com/economic-calendar/",
+        "Origin":     "https://www.investing.com",
+    }),
+]
+
+
 def _cal_fetch_json_api(market, start_iso, end_iso):
     """
     Endpoint JSON nuevo, encontrado por Santi con DevTools directamente en
-    investing.com/economic-calendar (confirmado en vivo: 200 OK + JSON real,
-    tanto para US como para ARG). Es un subdominio de API distinto
-    (endpoints.investing.com/pd-instruments/...) al del scraper HTML legacy
-    que veníamos usando (www.investing.com/economic-calendar/Service/...) —
-    ese último es el que da 403 desde IPs de datacenter. Este es más simple
-    (GET plano, sin sesión/cookies previas) y devuelve datos ya estructurados,
-    así que va primero; si algún día Cloudflare también lo bloquea acá, el
-    código cae al scraper viejo como red de contención.
+    investing.com/economic-calendar. Confirmado en vivo (fuera de Streamlit
+    Cloud/Colab) que responde 200 + JSON real para US y ARG.
+
+    Probado en Colab: con headers de navegador (Referer/Origin falsos) da
+    403 con el challenge de Cloudflare — pero también da el mismo 403 con
+    headers genéricos Y sin headers en absoluto. Eso descarta que sea un
+    problema de qué headers mandamos: en Colab está bloqueado pase lo que
+    pase. Colab (Google Cloud, rango 35.x) es de las IPs más quemadas del
+    mundo para scraping, así que puede estar en una lista negra específica
+    sin que eso diga nada sobre Streamlit Cloud, que es una IP distinta y
+    no tan conocida. Por eso probamos acá varias variantes de headers en
+    cadena (de la más simple/honesta a la más "camuflada"), por si en
+    Streamlit Cloud alguna sí pasa — cosa que en Colab ya no tiene sentido
+    seguir probando.
     """
     country_ids = _INVESTING_COUNTRY_CODES.get(market, ["5"])[0]
-    r = requests.get(
-        "https://endpoints.investing.com/pd-instruments/v1/calendars/economic/events/occurrences",
-        params={
-            "domain_id":   1,
-            "limit":       200,
-            "start_date":  start_iso,
-            "end_date":    end_iso,
-            "country_ids": country_ids,
-        },
-        headers={
-            "User-Agent": HEADERS["User-Agent"],
-            "Accept":     "application/json",
-            "Referer":    "https://www.investing.com/economic-calendar/",
-            "Origin":     "https://www.investing.com",
-        },
-        timeout=15,
-    )
-    return r.status_code, r.text
+    url = "https://endpoints.investing.com/pd-instruments/v1/calendars/economic/events/occurrences"
+    params = {
+        "domain_id":   1,
+        "limit":       200,
+        "start_date":  start_iso,
+        "end_date":    end_iso,
+        "country_ids": country_ids,
+    }
+
+    last_status, last_text = 0, ""
+    for _label, hdrs in _CAL_JSON_HEADER_VARIANTS:
+        try:
+            r = requests.get(url, params=params, headers=hdrs, timeout=15)
+            last_status, last_text = r.status_code, r.text
+            if r.status_code == 200:
+                return r.status_code, r.text
+        except Exception as e:
+            last_status, last_text = 0, str(e)
+    return last_status, last_text
 
 
 def _cal_parse_json(text, market):
