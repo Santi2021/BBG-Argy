@@ -744,20 +744,26 @@ def _sector_color_map(sectors: list) -> dict:
     return {s: _SECTOR_COLORS[i % len(_SECTOR_COLORS)] for i, s in enumerate(ordered)}
 
 
-_MIN_SECTOR_N = 6     # mínimo de empresas en un sector para calcularle una curva
-_TREND_MAX_BINS = 6   # cantidad máxima de franjas (bins) por sector
+_MIN_SECTOR_N   = 10   # mínimo de empresas en un sector para calcularle una curva
+_TREND_MAX_BINS = 4    # cantidad máxima de franjas (bins) por sector
+_TREND_MIN_PER_BIN = 8 # mínimo de empresas por franja (bins más grandes = curva más estable)
+_WINSOR_PCT = 0.05      # recorte de percentil 5-95 DENTRO de cada sector antes de promediar
 
 
 def _sector_trend_curves(df: pd.DataFrame, x_col: str, y_col: str, x_range: tuple):
     """
-    Para cada sector con >= _MIN_SECTOR_N empresas: parte los datos del
-    sector en franjas (bins) por x_col con cantidad pareja de empresas cada
-    una, y calcula la MEDIANA de x e y dentro de cada franja. Conectando
-    esos puntos con una curva (spline) se obtiene una tendencia que sigue
-    la forma real de los datos y es robusta a outliers — a diferencia de
-    una regresión lineal de 2 puntos, un solo dato extremo (ej. una ROE de
-    miles de %) no puede arrastrar toda la curva porque queda aislado
-    dentro de su propia franja y la mediana de esa franja lo ignora.
+    Para cada sector con >= _MIN_SECTOR_N empresas:
+      1. Winsoriza x e y DENTRO del sector (recorta al percentil 5-95, no
+         borra empresas) — así ninguna empresa individual con un valor
+         disparatado (ej. ROE de miles de %) puede determinar el resultado.
+      2. Parte los datos en pocas franjas (bins) grandes por x_col — con
+         >= _TREND_MIN_PER_BIN empresas por franja, para que la métrica de
+         cada franja sea estadísticamente estable y no un capricho de
+         muestra chica.
+      3. Calcula la MEDIA (no mediana) de x e y dentro de cada franja — una
+         vez recortados los extremos, la media aprovecha TODA la
+         información de la franja en vez de solo el valor del medio, lo
+         que da una curva mucho más suave al conectar franja con franja.
     Devuelve (dict sector -> (xs: list, ys: list, n_empresas), list sectores excluidos).
     """
     curves = {}
@@ -768,19 +774,26 @@ def _sector_trend_curves(df: pd.DataFrame, x_col: str, y_col: str, x_range: tupl
         if len(gg) < _MIN_SECTOR_N:
             excluded.append(sector)
             continue
-        n_bins = max(2, min(_TREND_MAX_BINS, len(gg) // 3))
+
+        gg = gg.copy()
+        x_lo_w, x_hi_w = gg[x_col].quantile(_WINSOR_PCT), gg[x_col].quantile(1 - _WINSOR_PCT)
+        y_lo_w, y_hi_w = gg[y_col].quantile(_WINSOR_PCT), gg[y_col].quantile(1 - _WINSOR_PCT)
+        gg[x_col] = gg[x_col].clip(x_lo_w, x_hi_w)
+        gg[y_col] = gg[y_col].clip(y_lo_w, y_hi_w)
+
+        n_bins = max(2, min(_TREND_MAX_BINS, len(gg) // _TREND_MIN_PER_BIN))
         try:
-            gg = gg.copy()
             gg["_bin"] = pd.qcut(gg[x_col], n_bins, duplicates="drop")
         except Exception:
             excluded.append(sector)
             continue
         pts = (
             gg.groupby("_bin", observed=True)
-              .agg(x=(x_col, "median"), y=(y_col, "median"))
+              .agg(x=(x_col, "mean"), y=(y_col, "mean"), n=(x_col, "size"))
               .dropna()
               .sort_values("x")
         )
+        pts = pts[pts["n"] >= 2]
         if len(pts) < 2:
             excluded.append(sector)
             continue
@@ -1036,8 +1049,10 @@ def _render_cuadrantes():
         st.markdown(
             f'<div style="color:#555;font-size:9px;font-family:Courier New;'
             f'padding:6px 0;border-top:1px solid #1a1a1a;margin-top:6px">'
-            f'CADA CURVA = MEDIANA DE {y_label.upper()} POR FRANJA DE {x_label.upper()} DENTRO DE ESE SECTOR '
-            f'(hasta {_TREND_MAX_BINS} franjas, robusto a outliers · n = cantidad de empresas){excl_note}'
+            f'CADA CURVA = PROMEDIO DE {y_label.upper()} POR FRANJA DE {x_label.upper()} DENTRO DE ESE SECTOR '
+            f'(datos recortados al percentil 5-95 por sector antes de promediar · '
+            f'hasta {_TREND_MAX_BINS} franjas de {_TREND_MIN_PER_BIN}+ empresas cada una · '
+            f'n = cantidad de empresas del sector){excl_note}'
             f'</div>',
             unsafe_allow_html=True
         )
