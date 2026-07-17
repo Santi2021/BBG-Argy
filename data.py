@@ -1116,6 +1116,121 @@ def _cal_parse_html(html_content, market):
     return events
 
 
+_CAL_IMPORTANCE_MAP = {"low": 1, "medium": 2, "high": 3}
+
+
+def _cal_iso_bounds():
+    """Ventana ayer/hoy/mañana en formato ISO8601 con offset -03:00 (Arg),
+    tal cual la pide el endpoint JSON nuevo (visto en vivo con DevTools)."""
+    today  = _dt.today()
+    d_from = (today - _td(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    d_to   = (today + _td(days=1)).replace(hour=23, minute=59, second=59, microsecond=999000)
+    start_iso = d_from.strftime("%Y-%m-%dT%H:%M:%S.000-03:00")
+    end_iso   = d_to.strftime("%Y-%m-%dT%H:%M:%S.999-03:00")
+    return start_iso, end_iso
+
+
+def _cal_to_art(iso_utc: str):
+    """'2026-07-16T12:30:00Z' -> ('2026-07-16', '09:30') en hora Argentina (UTC-3)."""
+    try:
+        dt_utc = _dt.strptime(iso_utc, "%Y-%m-%dT%H:%M:%SZ")
+        dt_art = dt_utc + _td(hours=-3)
+        return dt_art.strftime("%Y-%m-%d"), dt_art.strftime("%H:%M")
+    except Exception:
+        return "", ""
+
+
+def _cal_fmt_num(val, unit, precision):
+    if val is None:
+        return ""
+    try:
+        p = int(precision) if precision is not None else 1
+    except Exception:
+        p = 1
+    try:
+        s = f"{float(val):.{p}f}"
+    except Exception:
+        return str(val)
+    return f"{s}{unit or ''}"
+
+
+def _cal_fetch_json_api(market, start_iso, end_iso):
+    """
+    Endpoint JSON nuevo, encontrado por Santi con DevTools directamente en
+    investing.com/economic-calendar (confirmado en vivo: 200 OK + JSON real,
+    tanto para US como para ARG). Es un subdominio de API distinto
+    (endpoints.investing.com/pd-instruments/...) al del scraper HTML legacy
+    que veníamos usando (www.investing.com/economic-calendar/Service/...) —
+    ese último es el que da 403 desde IPs de datacenter. Este es más simple
+    (GET plano, sin sesión/cookies previas) y devuelve datos ya estructurados,
+    así que va primero; si algún día Cloudflare también lo bloquea acá, el
+    código cae al scraper viejo como red de contención.
+    """
+    country_ids = _INVESTING_COUNTRY_CODES.get(market, ["5"])[0]
+    r = requests.get(
+        "https://endpoints.investing.com/pd-instruments/v1/calendars/economic/events/occurrences",
+        params={
+            "domain_id":   1,
+            "limit":       200,
+            "start_date":  start_iso,
+            "end_date":    end_iso,
+            "country_ids": country_ids,
+        },
+        headers={
+            "User-Agent": HEADERS["User-Agent"],
+            "Accept":     "application/json",
+            "Referer":    "https://www.investing.com/economic-calendar/",
+            "Origin":     "https://www.investing.com",
+        },
+        timeout=15,
+    )
+    return r.status_code, r.text
+
+
+def _cal_parse_json(text, market):
+    data = _json.loads(text)
+    events_by_id = {ev.get("event_id"): ev for ev in data.get("events", [])}
+
+    records = []
+    for occ in data.get("occurrences", []):
+        ev = events_by_id.get(occ.get("event_id"))
+        if not ev:
+            continue
+        name = ev.get("event_translated") or ev.get("long_name") or ev.get("short_name") or ""
+        if not name:
+            continue
+
+        date_art, time_art = _cal_to_art(occ.get("occurrence_time", ""))
+        if not date_art:
+            continue
+
+        imp_str    = (ev.get("importance") or "low").lower()
+        importance = _CAL_IMPORTANCE_MAP.get(imp_str, 1)
+        cat, ic    = _cal_classify(name, market)
+
+        unit      = occ.get("unit", "") or ""
+        precision = occ.get("precision", 1)
+        actual    = _cal_fmt_num(occ.get("actual"),   unit, precision)
+        forecast  = _cal_fmt_num(occ.get("forecast"), unit, precision)
+        previous  = _cal_fmt_num(occ.get("previous"), unit, precision)
+
+        records.append({
+            "date":       date_art,
+            "time_et":    time_art,
+            "importance": importance,
+            "imp_final":  importance if importance > 0 else ic,
+            "category":   cat,
+            "event":      name,
+            "period":     occ.get("reference_period", "") or "",
+            "forecast":   forecast,
+            "previous":   previous,
+            "actual":     actual,
+            "release_dt": occ.get("occurrence_time", ""),
+        })
+
+    return records
+
+
 _INVESTING_BROWSER_HEADERS = {
     "User-Agent":
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -1205,10 +1320,27 @@ def _cal_fetch_requests_fallback(market, date_from, date_to):
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_economic_calendar(market: str = "US"):
     """
-    Scraper del calendario económico de Investing.com.
+    Calendario económico de Investing.com.
     market: "US" | "ARG"
     Devuelve list[dict] o {"error": str} si falla.
+
+    Camino 1 (nuevo, preferido): API JSON en endpoints.investing.com — la
+    encontró Santi con DevTools en vivo en investing.com/economic-calendar.
+    Confirmado con GET directo: 200 OK + datos reales para US y ARG.
+    Camino 2 (fallback): scraper HTML legacy — se sabe bloqueado (403) desde
+    IPs de datacenter (Streamlit Cloud y Google Colab, testeado), pero queda
+    como red de contención por si el camino 1 alguna vez falla.
     """
+    try:
+        start_iso, end_iso = _cal_iso_bounds()
+        status, text = _cal_fetch_json_api(market, start_iso, end_iso)
+        if status == 200:
+            records = _cal_parse_json(text, market)
+            if records:
+                return records
+    except Exception:
+        pass
+
     date_from, date_to = _cal_week_range()
 
     fetchers = []
