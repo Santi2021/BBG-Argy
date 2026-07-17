@@ -454,25 +454,38 @@ def _screener_filters(df: pd.DataFrame) -> pd.DataFrame:
     with st.expander("FILTROS", expanded=False):
         row_cols = None
         for i, (col, label, step) in enumerate(_NUMERIC_FILTERS):
-            if i % 3 == 0:
-                row_cols = st.columns(3)
-            with row_cols[i % 3]:
+            if i % 4 == 0:
+                row_cols = st.columns(4)
+            with row_cols[i % 4]:
                 st.markdown(
-                    f'<div style="color:#888;font-size:9px;font-family:\'Courier New\',monospace;'
-                    f'letter-spacing:1px;text-transform:uppercase;margin:4px 0 2px 0">{label}</div>',
+                    f'<div style="color:#ff6600;font-size:11px;font-weight:bold;'
+                    f'font-family:\'Courier New\',monospace;letter-spacing:1px;'
+                    f'text-transform:uppercase;margin:8px 0 4px 0">{label}</div>',
                     unsafe_allow_html=True,
                 )
                 key_base = col.replace("/", "_").replace(" ", "_")
                 mc1, mc2 = st.columns(2)
                 with mc1:
+                    st.markdown(
+                        '<div style="color:#555;font-size:8px;font-weight:bold;'
+                        'letter-spacing:1px;text-transform:uppercase;margin-bottom:1px">MÍN.</div>',
+                        unsafe_allow_html=True,
+                    )
                     vmin = st.number_input(
                         "mín.", value=0.0, step=step,
                         key=f"scr_num_{key_base}_min",
+                        label_visibility="collapsed",
                     )
                 with mc2:
+                    st.markdown(
+                        '<div style="color:#555;font-size:8px;font-weight:bold;'
+                        'letter-spacing:1px;text-transform:uppercase;margin-bottom:1px">MÁX.</div>',
+                        unsafe_allow_html=True,
+                    )
                     vmax = st.number_input(
                         "máx.", value=0.0, step=step,
                         key=f"scr_num_{key_base}_max",
+                        label_visibility="collapsed",
                     )
                 vals[col] = (vmin, vmax)
 
