@@ -976,7 +976,7 @@ def _cal_week_range():
     3 días (ayer, hoy, mañana) — siempre trae algo: lo ya publicado de
     ayer/hoy y lo que se viene mañana.
     """
-    today     = _dt.today()
+    today     = _cal_now_art()
     date_from = today - _td(days=1)
     date_to   = today + _td(days=1)
     return date_from.strftime("%Y-%m-%d"), date_to.strftime("%Y-%m-%d")
@@ -1118,11 +1118,31 @@ def _cal_parse_html(html_content, market):
 
 _CAL_IMPORTANCE_MAP = {"low": 1, "medium": 2, "high": 3}
 
+try:
+    from zoneinfo import ZoneInfo as _ZoneInfo
+    _ART_TZ = _ZoneInfo("America/Argentina/Buenos_Aires")
+except Exception:
+    _ART_TZ = None
+
+
+def _cal_now_art():
+    """
+    'Hoy' según la hora de Argentina, sin importar en qué huso horario corra
+    el servidor (Streamlit Cloud corre en UTC). FIX del bug reportado: antes
+    se usaba _dt.today() (hora del servidor), así que en el rango de horas
+    donde ya es día siguiente en UTC pero todavía no en Argentina (21hs a
+    00hs ART), toda la ventana ayer/hoy/mañana se corría un día — mostraba
+    hoy como "ayer" y se comía el dato real de ayer.
+    """
+    if _ART_TZ is not None:
+        return _dt.now(_ART_TZ).replace(tzinfo=None)
+    return _dt.utcnow() - _td(hours=3)
+
 
 def _cal_iso_bounds():
     """Ventana ayer/hoy/mañana en formato ISO8601 con offset -03:00 (Arg),
     tal cual la pide el endpoint JSON nuevo (visto en vivo con DevTools)."""
-    today  = _dt.today()
+    today  = _cal_now_art()
     d_from = (today - _td(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
     d_to   = (today + _td(days=1)).replace(hour=23, minute=59, second=59, microsecond=999000)
     start_iso = d_from.strftime("%Y-%m-%dT%H:%M:%S.000-03:00")
