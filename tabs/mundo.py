@@ -733,20 +733,39 @@ def _render_cuadrantes():
 
     _render_section_title("CUADRANTES")
 
+    # Defensivo: solo ofrecer métricas cuya columna realmente está en este
+    # fetch (protege ante algún futuro cambio de layout de Finviz sin
+    # romper la sección — antes esto no se chequeaba y un nombre de columna
+    # ausente tiraba KeyError; ver fix en data.py _finviz_merge_views).
+    available_metrics = [(lbl, col) for lbl, col in _QUADRANT_METRICS if col in data.columns]
+    if len(available_metrics) < 2 or "Market Cap" not in data.columns:
+        st.markdown(
+            '<p style="color:#555;font-family:Courier New;font-size:11px">'
+            'No hay suficientes columnas numéricas en este fetch de Finviz. '
+            'Probá de nuevo en unos minutos.</p>',
+            unsafe_allow_html=True
+        )
+        return
+    available_labels = [m[0] for m in available_metrics]
+    available_map = dict(available_metrics)
+
     sectors = sorted(data["Sector"].dropna().unique().tolist()) if "Sector" in data.columns else []
+
+    default_x = "P/E" if "P/E" in available_labels else available_labels[0]
+    default_y = "ROE %" if "ROE %" in available_labels else available_labels[-1]
 
     c1, c2, c3 = st.columns([2, 2, 3])
     with c1:
-        x_label = st.selectbox("Eje X", _QUADRANT_LABELS,
-                                index=_QUADRANT_LABELS.index("P/E"), key="quad_x")
+        x_label = st.selectbox("Eje X", available_labels,
+                                index=available_labels.index(default_x), key="quad_x")
     with c2:
-        y_label = st.selectbox("Eje Y", _QUADRANT_LABELS,
-                                index=_QUADRANT_LABELS.index("ROE %"), key="quad_y")
+        y_label = st.selectbox("Eje Y", available_labels,
+                                index=available_labels.index(default_y), key="quad_y")
     with c3:
         sel_sectors = st.multiselect("Sector", sectors, default=[], key="quad_sector")
 
-    x_col = _QUADRANT_MAP[x_label]
-    y_col = _QUADRANT_MAP[y_label]
+    x_col = available_map[x_label]
+    y_col = available_map[y_label]
 
     plot_df = data.dropna(subset=[x_col, y_col, "Market Cap"]).copy()
     if sel_sectors:
@@ -865,6 +884,18 @@ def _render_comparador():
 
     _render_section_title("COMPARADOR")
 
+    # Defensivo: mismo motivo que en Cuadrantes — solo usar ejes cuya
+    # columna esté realmente presente en este fetch de Finviz.
+    available_metrics = [(lbl, col, inv) for lbl, col, inv in _RADAR_METRICS if col in data.columns]
+    if len(available_metrics) < 3:
+        st.markdown(
+            '<p style="color:#555;font-family:Courier New;font-size:11px">'
+            'No hay suficientes columnas numéricas en este fetch de Finviz. '
+            'Probá de nuevo en unos minutos.</p>',
+            unsafe_allow_html=True
+        )
+        return
+
     label_map = dict(zip(data["Ticker"], data["Company"]))
     display_opts = [f"{t} — {label_map[t]}" for t in sorted(label_map.keys())]
     rev_map = {f"{t} — {label_map[t]}": t for t in label_map}
@@ -884,10 +915,10 @@ def _render_comparador():
         return
 
     pct_df = data[["Ticker"]].copy()
-    for _, col, invert in _RADAR_METRICS:
+    for _, col, invert in available_metrics:
         pct_df[col] = _percentile_ranks(data, col, invert)
 
-    axis_labels = [m[0] for m in _RADAR_METRICS]
+    axis_labels = [m[0] for m in available_metrics]
 
     fig = go.Figure()
     for i, ticker in enumerate(sel_tickers):
@@ -896,7 +927,7 @@ def _render_comparador():
             continue
         values = [
             float(row.iloc[0][col]) if pd.notna(row.iloc[0][col]) else 0.0
-            for _, col, _ in _RADAR_METRICS
+            for _, col, _ in available_metrics
         ]
         color = _RADAR_COLORS[i % len(_RADAR_COLORS)]
         fig.add_trace(go.Scatterpolar(
@@ -939,7 +970,7 @@ def _render_comparador():
     )
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
-    raw_cols = ["Ticker", "Company"] + [col for _, col, _ in _RADAR_METRICS] + ["Market Cap", "Price"]
+    raw_cols = ["Ticker", "Company"] + [col for _, col, _ in available_metrics] + ["Market Cap", "Price"]
     comp_table = data[data["Ticker"].isin(sel_tickers)][raw_cols].copy()
     comp_table = comp_table.set_index("Ticker").loc[sel_tickers].reset_index()
     st.dataframe(
