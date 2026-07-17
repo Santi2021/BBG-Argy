@@ -1480,6 +1480,32 @@ def _finviz_fetch_raw(view_code, filter_str, r_offset=1):
         return 0, ""
 
 
+_TICKER_RE = re.compile(r"^[A-Z][A-Z0-9.\-]{0,5}$")
+
+
+def _finviz_extract_ticker(cell):
+    """
+    Extrae el ticker de la celda de forma robusta. `cell.find('a')` (el
+    primer <a> de la celda) puede NO ser el link del ticker si Finviz
+    agrega otros <a> antes (ícono de favorito, badge, etc.) — eso causaba
+    que se guardara solo la primera letra del ticker real (bug detectado:
+    "AAL" se guardaba como "A", "BBIO" como "B", etc., y el dedupe por
+    Ticker después colapsaba cientos de filas a 26, una por letra).
+    Preferimos sacar el ticker del href (?t=TICKER), que es estable pase
+    lo que pase con el texto visible / íconos.
+    """
+    for a in cell.find_all("a"):
+        href = a.get("href", "") or ""
+        m = re.search(r"[?&]t=([A-Z0-9.\-]+)", href, re.IGNORECASE)
+        if m:
+            return m.group(1).upper()
+    for a in cell.find_all("a"):
+        txt = a.get_text(strip=True)
+        if _TICKER_RE.match(txt):
+            return txt
+    return cell.get_text(strip=True)
+
+
 def _finviz_parse_page(html):
     """Devuelve (list[dict] de filas, total_count o None) de una página."""
     soup = BeautifulSoup(html, "html.parser")
@@ -1506,6 +1532,9 @@ def _finviz_parse_page(html):
             continue
         row = {}
         for h, c in zip(headers, cells):
+            if h == "Ticker":
+                row[h] = _finviz_extract_ticker(c)
+                continue
             a = c.find("a")
             row[h] = a.get_text(strip=True) if a else c.get_text(strip=True)
         if row.get("Ticker"):
@@ -1563,11 +1592,30 @@ def _finviz_merge_views(base_filter):
     return merged
 
 
-@st.cache_data(ttl=21600, show_spinner=False)  # 6hs — fundamentals no cambian intradía
-def get_finviz_screener(min_cap_filter="cap_largeover"):
+def _finviz_cache_bucket():
+    """
+    Clave de cache "por horario" (no por tiempo transcurrido):
+      - 10:00 a 18:00 ART: cambia cada hora -> fuerza un refresh de Finviz.
+      - 18:00 a 10:00 ART: siempre la misma clave (el snapshot de las 18:00),
+        así el dato queda congelado toda la noche sin volver a scrapear
+        aunque el usuario haga refresh del navegador.
+    """
+    now = _cal_now_art()
+    hour = now.hour
+    if 10 <= hour < 18:
+        return f"{now.date()}_{hour:02d}"
+    anchor = now.date() if hour >= 18 else (now.date() - _td(days=1))
+    return f"{anchor}_close18"
+
+
+@st.cache_data(ttl=25 * 3600, show_spinner=False)  # ttl = red de seguridad; la clave de horario manda
+def get_finviz_screener(cache_bucket=None, min_cap_filter="cap_largeover"):
     """
     Screener propio sobre NASDAQ+NYSE con piso de market cap.
     Devuelve pandas.DataFrame o {"error": str}.
+    `cache_bucket` no se usa adentro: solo participa del hash de cache_data
+    para que Streamlit invalide/reuse según la ventana horaria (ver
+    _finviz_cache_bucket). Llamar siempre como get_finviz_screener(_finviz_cache_bucket()).
     """
     try:
         df_nasd = _finviz_merge_views(f"{min_cap_filter},exch_nasd")
