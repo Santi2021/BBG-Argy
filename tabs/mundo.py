@@ -410,6 +410,71 @@ _NUMERIC_FILTERS = [
     ("Change",      "Change hoy %",      0.5),
 ]
 
+# ─── Coerción numérica para que el sort de columnas del st.dataframe (canvas,
+#     no acepta CSS — ver gotcha #3) funcione bien. Finviz devuelve todo como
+#     texto ("99.86B", "640,699", "0.26%"); sin convertir a float/int real,
+#     hacer click en el header de la tabla ordena como STRING y no como
+#     número (bug reportado: "963.60B" quedaba metido en medio de "97.10B" y
+#     "96.87B" porque alfabéticamente "6" < "7" en el segundo carácter).
+_CAP_COLS   = ["Market Cap"]
+_PRICE_COLS = ["Price"]
+_INT_COLS   = ["Volume"]
+_PCT_COLS   = ["Change", "Dividend", "ROA", "ROE", "ROIC", "Gross M", "Oper M",
+               "Profit M", "EPS This Y", "EPS Next Y", "EPS Past 5Y",
+               "EPS Next 5Y", "Sales Past 5Y"]
+_PLAIN_NUM_COLS = ["P/E", "Forward P/E", "PEG", "P/S", "P/B", "P/C", "P/FCF",
+                    "Curr R", "Quick R", "LTDebt/Eq", "Debt/Eq"]
+
+
+def _parse_market_cap(s):
+    """'99.86B' -> 99.86 · '1.2T' -> 1200.0 · '850M' -> 0.85 (todo en miles de millones USD)."""
+    s = str(s).strip().upper().replace("$", "").replace(",", "")
+    if not s or s in ("-", "N/A", "NAN", "NONE"):
+        return None
+    mult = 1.0
+    if s.endswith("T"):
+        mult, s = 1000.0, s[:-1]
+    elif s.endswith("B"):
+        mult, s = 1.0, s[:-1]
+    elif s.endswith("M"):
+        mult, s = 1 / 1000.0, s[:-1]
+    elif s.endswith("K"):
+        mult, s = 1 / 1_000_000.0, s[:-1]
+    try:
+        return float(s) * mult
+    except ValueError:
+        return None
+
+
+def _coerce_numeric(df: pd.DataFrame) -> pd.DataFrame:
+    """Convierte a float las columnas numéricas (siguen viniendo como texto de Finviz)
+    para que ordenar por columna en la tabla funcione por valor real, no alfabético."""
+    out = df.copy()
+    for c in _CAP_COLS:
+        if c in out.columns:
+            out[c] = out[c].apply(_parse_market_cap)
+    for c in _PRICE_COLS + _INT_COLS + _PCT_COLS + _PLAIN_NUM_COLS:
+        if c in out.columns:
+            out[c] = out[c].apply(_parse_num)
+    return out
+
+
+def _column_config_for(cols: list) -> dict:
+    cfg = {}
+    for c in cols:
+        if c == "Market Cap":
+            cfg[c] = st.column_config.NumberColumn(c, format="%.2f B")
+        elif c == "Price":
+            cfg[c] = st.column_config.NumberColumn(c, format="$ %.2f")
+        elif c == "Volume":
+            cfg[c] = st.column_config.NumberColumn(c, format="%d")
+        elif c in _PCT_COLS:
+            cfg[c] = st.column_config.NumberColumn(c, format="%.2f%%")
+        elif c in _PLAIN_NUM_COLS:
+            cfg[c] = st.column_config.NumberColumn(c, format="%.2f")
+    return cfg
+
+
 _SUBNAV_CSS = """
 <style>
   div[role="radiogroup"][aria-label="SECCIÓN"] button[data-selected="true"],
@@ -511,6 +576,7 @@ def _render_dataframe(df: pd.DataFrame, cols: list):
         use_container_width=True,
         hide_index=True,
         height=560,
+        column_config=_column_config_for(available),
     )
 
 
@@ -534,6 +600,11 @@ def _render_screener():
             unsafe_allow_html=True
         )
         return
+
+    # Finviz trae todo como texto ("99.86B", "640,699", "0.26%") — convertir a
+    # numérico acá para que el sort por columna en la tabla (canvas/glide-data-grid)
+    # ordene por valor real y no alfabéticamente.
+    data = _coerce_numeric(data)
 
     st.markdown(
         '<div style="color:#ff6600;font-size:11px;font-weight:bold;'
