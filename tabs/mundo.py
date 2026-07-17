@@ -307,10 +307,10 @@ def _build_company_panel(companies, quotes, start_rank=1):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  RENDER
+#  TAB 1: EQUITY GLOBAL — el grid de 9 paneles (contenido original de Mundo)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def render():
+def _render_equity_grid():
     N = COMPANIES_PER_PANEL  # 13
 
     with st.spinner(""):
@@ -365,3 +365,13 @@ def render():
     </div>"""
 
     st.markdown(grid_html, unsafe_allow_html=True)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  RENDER PRINCIPAL — sub-tabs dentro de Mundo
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def render():
+    subtabs = st.tabs(["EQUITY GLOBAL"])
+    with subtabs[0]:
+        _render_equity_grid()
