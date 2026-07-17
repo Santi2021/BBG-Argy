@@ -717,6 +717,22 @@ _SECTOR_COLORS = [
 ]
 
 
+def _axis_auto_range(series: pd.Series, lo_pct: float = 0.02, hi_pct: float = 0.98, pad: float = 0.08):
+    """Rango default para un eje: percentil 2-98 con un margen de aire, en vez
+    del min/max real — así un outlier brutal (ROE de miles de %, etc.) no
+    aplasta el resto de los puntos contra el borde del gráfico."""
+    s = series.dropna()
+    if s.empty:
+        return 0.0, 1.0
+    lo = float(s.quantile(lo_pct))
+    hi = float(s.quantile(hi_pct))
+    if lo == hi:
+        lo -= 1.0
+        hi += 1.0
+    span = hi - lo
+    return lo - span * pad, hi + span * pad
+
+
 def _render_cuadrantes():
     st.markdown(_SUBNAV_CSS, unsafe_allow_html=True)
 
@@ -784,6 +800,58 @@ def _render_cuadrantes():
     x_suffix = "%" if x_col in _PCT_COLS else ""
     y_suffix = "%" if y_col in _PCT_COLS else ""
 
+    # Rango de ejes editable — Finviz siempre trae algún outlier brutal
+    # (ROE de miles de % en una empresa con equity casi cero, etc.) que
+    # aplasta el resto de los puntos contra el borde. En vez de pelear con
+    # el zoom/drag nativo de Plotly (incómodo), se ofrece un mín./máx. por
+    # eje con el mismo patrón de inputs que ya usás en Filtros del Screener.
+    # El default no es el rango completo: se arranca ya recortado al
+    # percentil 2-98 (con margen) para que el gráfico nazca legible, y el
+    # usuario lo agranda si quiere ver los extremos.
+    x_auto_lo, x_auto_hi = _axis_auto_range(plot_df[x_col])
+    y_auto_lo, y_auto_hi = _axis_auto_range(plot_df[y_col])
+
+    with st.expander("RANGO DE EJES", expanded=False):
+        rc1, rc2 = st.columns(2)
+        with rc1:
+            st.markdown(
+                f'<div style="color:#ff6600;font-size:10px;font-weight:bold;'
+                f'font-family:\'Courier New\',monospace;letter-spacing:1px;'
+                f'text-transform:uppercase;margin-bottom:4px">EJE X · {x_label}</div>',
+                unsafe_allow_html=True,
+            )
+            xr1, xr2 = st.columns(2)
+            with xr1:
+                st.markdown('<div style="color:#555;font-size:8px;font-weight:bold">MÍN.</div>', unsafe_allow_html=True)
+                x_min = st.number_input("x min", value=round(x_auto_lo, 1),
+                                         key=f"quad_xmin_{x_col}", label_visibility="collapsed")
+            with xr2:
+                st.markdown('<div style="color:#555;font-size:8px;font-weight:bold">MÁX.</div>', unsafe_allow_html=True)
+                x_max = st.number_input("x max", value=round(x_auto_hi, 1),
+                                         key=f"quad_xmax_{x_col}", label_visibility="collapsed")
+        with rc2:
+            st.markdown(
+                f'<div style="color:#ff6600;font-size:10px;font-weight:bold;'
+                f'font-family:\'Courier New\',monospace;letter-spacing:1px;'
+                f'text-transform:uppercase;margin-bottom:4px">EJE Y · {y_label}</div>',
+                unsafe_allow_html=True,
+            )
+            yr1, yr2 = st.columns(2)
+            with yr1:
+                st.markdown('<div style="color:#555;font-size:8px;font-weight:bold">MÍN.</div>', unsafe_allow_html=True)
+                y_min = st.number_input("y min", value=round(y_auto_lo, 1),
+                                         key=f"quad_ymin_{y_col}", label_visibility="collapsed")
+            with yr2:
+                st.markdown('<div style="color:#555;font-size:8px;font-weight:bold">MÁX.</div>', unsafe_allow_html=True)
+                y_max = st.number_input("y max", value=round(y_auto_hi, 1),
+                                         key=f"quad_ymax_{y_col}", label_visibility="collapsed")
+        st.markdown(
+            '<div style="color:#555;font-size:9px;font-family:Courier New;margin-top:4px">'
+            'Arranca recortado al percentil 2-98 para que los outliers no aplasten el resto. '
+            'Agrandá el rango si querés ver todo.</div>',
+            unsafe_allow_html=True
+        )
+
     fig = px.scatter(
         plot_df, x=x_col, y=y_col,
         size="Market Cap", color="Sector",
@@ -816,12 +884,14 @@ def _render_cuadrantes():
             gridcolor="#111", linecolor="#333", zerolinecolor="#222",
             tickfont=dict(size=9, color="#ccc", family="Courier New"),
             ticksuffix=x_suffix,
+            range=[x_min, x_max],
         ),
         yaxis=dict(
             title=dict(text=y_label.upper(), font=dict(size=9, color="#888")),
             gridcolor="#111", linecolor="#333", zerolinecolor="#222",
             tickfont=dict(size=9, color="#ccc", family="Courier New"),
             ticksuffix=y_suffix,
+            range=[y_min, y_max],
         ),
         legend=dict(
             bgcolor="rgba(0,0,0,0.7)", bordercolor="#333", borderwidth=1,
@@ -944,25 +1014,26 @@ def _render_comparador():
         paper_bgcolor="#000",
         polar=dict(
             bgcolor="#000",
+            domain=dict(x=[0.14, 0.86], y=[0.1, 0.92]),
             radialaxis=dict(
                 visible=True, range=[0, 100],
                 gridcolor="#222", linecolor="#333",
-                tickfont=dict(size=8, color="#555", family="Courier New"),
+                tickfont=dict(size=9, color="#666", family="Courier New"),
             ),
             angularaxis=dict(
                 gridcolor="#222", linecolor="#333",
-                tickfont=dict(size=9, color="#ccc", family="Courier New"),
+                tickfont=dict(size=13, color="#eee", family="Courier New"),
             ),
         ),
         font=dict(family="Courier New", size=9, color="#555"),
         showlegend=True,
         legend=dict(
             bgcolor="rgba(0,0,0,0.7)", bordercolor="#333", borderwidth=1,
-            font=dict(size=10, color="#ccc", family="Courier New"),
-            orientation="h", yanchor="bottom", y=-0.12, xanchor="center", x=0.5,
+            font=dict(size=11, color="#ccc", family="Courier New"),
+            orientation="h", yanchor="bottom", y=-0.14, xanchor="center", x=0.5,
         ),
-        margin=dict(l=60, r=60, t=30, b=30),
-        height=520,
+        margin=dict(l=110, r=110, t=50, b=60),
+        height=600,
         hoverlabel=dict(
             bgcolor="#111", bordercolor="#ff6600",
             font=dict(family="Courier New", size=9, color="#fff"),
