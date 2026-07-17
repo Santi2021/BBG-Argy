@@ -385,27 +385,29 @@ _SCREENER_FINANCIAL_COLS = ["Ticker","Company","Market Cap","Dividend","ROA","RO
 
 # Filtros finos "estilo Finviz Fundamental tab" — todos calculados con pandas
 # sobre las columnas que ya bajamos (Overview+Valuation+Financial merged).
-# (columna_df, etiqueta, "max"/"min", step)
+# Cada filtro ahora soporta rango (mín. y máx.) — 0 en cualquiera de los dos
+# significa "sin límite" en esa punta.
+# (columna_df, etiqueta, step)
 _NUMERIC_FILTERS = [
-    ("P/E",         "P/E",               "max", 1.0),
-    ("Forward P/E", "Forward P/E",       "max", 1.0),
-    ("PEG",         "PEG",               "max", 0.1),
-    ("P/S",         "P/S",               "max", 0.5),
-    ("P/B",         "P/B",               "max", 0.5),
-    ("P/C",         "P/Cash",            "max", 1.0),
-    ("P/FCF",       "P/FCF",             "max", 1.0),
-    ("Dividend",    "Div. Yield %",      "min", 0.5),
-    ("ROA",         "ROA %",             "min", 1.0),
-    ("ROE",         "ROE %",             "min", 1.0),
-    ("ROIC",        "ROIC %",            "min", 1.0),
-    ("Curr R",      "Current Ratio",     "min", 0.1),
-    ("Quick R",     "Quick Ratio",       "min", 0.1),
-    ("LTDebt/Eq",   "LT Debt/Eq",        "max", 0.1),
-    ("Debt/Eq",     "Debt/Eq",           "max", 0.1),
-    ("Gross M",     "Gross Margin %",    "min", 1.0),
-    ("Oper M",      "Oper Margin %",     "min", 1.0),
-    ("Profit M",    "Profit Margin %",   "min", 1.0),
-    ("Change",      "Change hoy %",      "min", 0.5),
+    ("P/E",         "P/E",               1.0),
+    ("Forward P/E", "Forward P/E",       1.0),
+    ("PEG",         "PEG",               0.1),
+    ("P/S",         "P/S",               0.5),
+    ("P/B",         "P/B",               0.5),
+    ("P/C",         "P/Cash",            1.0),
+    ("P/FCF",       "P/FCF",             1.0),
+    ("Dividend",    "Div. Yield %",      0.5),
+    ("ROA",         "ROA %",             1.0),
+    ("ROE",         "ROE %",             1.0),
+    ("ROIC",        "ROIC %",            1.0),
+    ("Curr R",      "Current Ratio",     0.1),
+    ("Quick R",     "Quick Ratio",       0.1),
+    ("LTDebt/Eq",   "LT Debt/Eq",        0.1),
+    ("Debt/Eq",     "Debt/Eq",           0.1),
+    ("Gross M",     "Gross Margin %",    1.0),
+    ("Oper M",      "Oper Margin %",     1.0),
+    ("Profit M",    "Profit Margin %",   1.0),
+    ("Change",      "Change hoy %",      0.5),
 ]
 
 _SUBNAV_CSS = """
@@ -449,27 +451,42 @@ def _screener_filters(df: pd.DataFrame) -> pd.DataFrame:
         out = out[out["Country"].isin(sel_countries)]
 
     vals = {}
-    with st.expander("FILTROS FUNDAMENTALES (estilo Finviz) — 0 = sin límite", expanded=False):
+    with st.expander("FILTROS", expanded=False):
         row_cols = None
-        for i, (col, label, mode, step) in enumerate(_NUMERIC_FILTERS):
-            if i % 4 == 0:
-                row_cols = st.columns(4)
-            with row_cols[i % 4]:
-                suffix = "máx." if mode == "max" else "mín."
-                vals[col] = st.number_input(
-                    f"{label} {suffix}", value=0.0, step=step,
-                    key=f"scr_num_{col.replace('/', '_').replace(' ', '_')}",
+        for i, (col, label, step) in enumerate(_NUMERIC_FILTERS):
+            if i % 3 == 0:
+                row_cols = st.columns(3)
+            with row_cols[i % 3]:
+                st.markdown(
+                    f'<div style="color:#888;font-size:9px;font-family:\'Courier New\',monospace;'
+                    f'letter-spacing:1px;text-transform:uppercase;margin:4px 0 2px 0">{label}</div>',
+                    unsafe_allow_html=True,
                 )
+                key_base = col.replace("/", "_").replace(" ", "_")
+                mc1, mc2 = st.columns(2)
+                with mc1:
+                    vmin = st.number_input(
+                        "mín.", value=0.0, step=step,
+                        key=f"scr_num_{key_base}_min",
+                    )
+                with mc2:
+                    vmax = st.number_input(
+                        "máx.", value=0.0, step=step,
+                        key=f"scr_num_{key_base}_max",
+                    )
+                vals[col] = (vmin, vmax)
 
-    for col, label, mode, step in _NUMERIC_FILTERS:
-        v = vals.get(col, 0.0)
-        if v == 0.0 or col not in out.columns:
+    for col, label, step in _NUMERIC_FILTERS:
+        vmin, vmax = vals.get(col, (0.0, 0.0))
+        if col not in out.columns:
+            continue
+        if vmin == 0.0 and vmax == 0.0:
             continue
         num = out[col].apply(_parse_num)
-        if mode == "max":
-            out = out[(num.notna()) & (num <= v)]
-        else:
-            out = out[(num.notna()) & (num >= v)]
+        if vmin != 0.0:
+            out = out[(num.notna()) & (num >= vmin)]
+        if vmax != 0.0:
+            out = out[(num.notna()) & (num <= vmax)]
 
     return out
 
@@ -506,18 +523,31 @@ def _render_screener():
         return
 
     st.markdown(
-        f'<div style="color:{"#ff6600"};font-size:11px;font-weight:bold;'
-        f'letter-spacing:2px;text-transform:uppercase;border-bottom:1px solid #333;'
-        f'padding-bottom:4px;margin-bottom:10px;font-family:\'Courier New\',monospace">'
-        f'SCREENER · NASDAQ+NYSE · MARKET CAP ≥ $10B · {len(data)} empresas</div>',
+        '<div style="color:#ff6600;font-size:11px;font-weight:bold;'
+        'letter-spacing:2px;text-transform:uppercase;border-bottom:1px solid #333;'
+        'padding-bottom:4px;margin-bottom:10px;font-family:\'Courier New\',monospace">'
+        'SCREENER</div>',
         unsafe_allow_html=True
     )
 
     filtered = _screener_filters(data)
 
+    total = len(data)
+    shown = len(filtered)
+    pct = (shown / total * 100) if total else 0
     st.markdown(
-        f'<div style="color:#888;font-size:10px;font-family:Courier New;'
-        f'margin:6px 0 8px 0">MOSTRANDO {len(filtered)} DE {len(data)}</div>',
+        f'<div style="display:flex;align-items:center;gap:10px;background:#0a0a0a;'
+        f'border:1px solid #333;padding:6px 10px;margin:8px 0 10px 0;'
+        f'font-family:\'Courier New\',monospace">'
+        f'<div style="color:#ff6600;font-size:9px;font-weight:bold;letter-spacing:1px;'
+        f'text-transform:uppercase;white-space:nowrap">RESULTADOS</div>'
+        f'<div style="color:#ffcc00;font-size:17px;font-weight:bold;line-height:1">{shown}</div>'
+        f'<div style="color:#555;font-size:11px;white-space:nowrap">/ {total}</div>'
+        f'<div style="flex:1;height:5px;background:#1a1a1a;border-radius:2px;overflow:hidden">'
+        f'<div style="height:100%;width:{pct:.1f}%;background:#ff6600;border-radius:2px"></div>'
+        f'</div>'
+        f'<div style="color:#888;font-size:10px;white-space:nowrap">{pct:.0f}%</div>'
+        f'</div>',
         unsafe_allow_html=True
     )
 
