@@ -249,43 +249,21 @@ def _render_calendar_html(records: list, market: str) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  Botoneras — CSS scopeado por container(key=...) en vez de nth-child
+#  Botoneras — st.segmented_control nativo (pills prolijas, sin CSS casero)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _toggle_btn_css(is_active, accent):
-    bg = "#0a0000" if is_active else "#000"
-    color = accent if is_active else "#777"
-    bb = f"2px solid {accent}" if is_active else "2px solid transparent"
-    return (
-        f"background:{bg} !important;"
-        f"color:{color} !important;"
-        f"border-left:none !important;"
-        f"border-right:1px solid #1a1a1a !important;"
-        f"border-top:none !important;"
-        f"border-bottom:{bb} !important;"
-        f"border-radius:0 !important;"
-        f"font-family:'Courier New',monospace !important;"
-        f"font-size:10px !important;"
-        f"font-weight:bold !important;"
-        f"letter-spacing:1.5px !important;"
-        f"padding:0 12px !important;"
-        f"height:28px !important;"
-        f"width:100% !important;"
-    )
-
-
-def _row_css(container_key, n_cols, is_active_list, accent):
-    rules = ""
-    for i in range(1, n_cols + 1):
-        rules += (
-            f'.st-key-{container_key} div[data-testid="column"]:nth-child({i}) .stButton > button {{'
-            f'{_toggle_btn_css(is_active_list[i-1], accent)}'
-            f'}}\n'
-        )
-    rules += (
-        f'.st-key-{container_key} .stButton > button:hover {{ opacity:0.85 !important; }}\n'
-    )
-    return f"<style>{rules}</style>"
+_SEGCTL_CSS = """
+<style>
+  div[data-testid="stSegmentedControl"] {
+    font-family: 'Courier New', monospace !important;
+  }
+  div[data-testid="stSegmentedControl"] label p {
+    font-family: 'Courier New', monospace !important;
+    font-size: 11px !important;
+    letter-spacing: 1px !important;
+  }
+</style>
+"""
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -295,12 +273,7 @@ def _row_css(container_key, n_cols, is_active_list, accent):
 def render():
     from data import get_economic_calendar
 
-    if "cal_market" not in st.session_state:
-        st.session_state["cal_market"] = "US"
-    if "cal_day" not in st.session_state:
-        st.session_state["cal_day"] = "HOY"
-    if "cal_min_imp" not in st.session_state:
-        st.session_state["cal_min_imp"] = 1
+    st.markdown(_SEGCTL_CSS, unsafe_allow_html=True)
 
     with st.spinner("Cargando calendario económico..."):
         us_data  = get_economic_calendar("US")
@@ -311,83 +284,63 @@ def render():
     us_records  = us_data  if isinstance(us_data,  list) else []
     arg_records = arg_data if isinstance(arg_data, list) else []
 
-    active  = st.session_state["cal_market"]
-    day_sel = st.session_state["cal_day"]
-    min_imp = st.session_state["cal_min_imp"]
-
     n_us, n_arg = len(us_records), len(arg_records)
+
+    # ── Fila 1: US / ARG ──────────────────────────────────────────────────────
+    market_sel = st.segmented_control(
+        "Mercado",
+        options=["US", "ARG"],
+        format_func=lambda v: f"🇺🇸 US · {n_us}" if v == "US" else f"🇦🇷 ARG · {n_arg}",
+        default="US",
+        key="cal_market",
+        label_visibility="collapsed",
+    )
+    active = market_sel or st.session_state.get("_cal_market_last", "US")
+    st.session_state["_cal_market_last"] = active
+
     records_all = us_records if active == "US" else arg_records
 
     yest_str, today_str, tom_str = _art_date_str(-1), _art_date_str(0), _art_date_str(1)
     day_dates = {"AYER": yest_str, "HOY": today_str, "MAÑANA": tom_str}
 
-    n_yest = sum(1 for r in records_all if r.get("date") == yest_str)
+    n_yest  = sum(1 for r in records_all if r.get("date") == yest_str)
     n_today = sum(1 for r in records_all if r.get("date") == today_str)
-    n_tom  = sum(1 for r in records_all if r.get("date") == tom_str)
+    n_tom   = sum(1 for r in records_all if r.get("date") == tom_str)
+    day_counts = {"AYER": n_yest, "HOY": n_today, "MAÑANA": n_tom}
+
+    # ── Fila 2: AYER / HOY / MAÑANA ────────────────────────────────────────────
+    day_sel_raw = st.segmented_control(
+        "Día",
+        options=["AYER", "HOY", "MAÑANA"],
+        format_func=lambda v: f"{v} · {day_counts[v]}",
+        default="HOY",
+        key="cal_day",
+        label_visibility="collapsed",
+    )
+    day_sel = day_sel_raw or st.session_state.get("_cal_day_last", "HOY")
+    st.session_state["_cal_day_last"] = day_sel
 
     day_target  = day_dates[day_sel]
     day_records = [r for r in records_all if r.get("date") == day_target]
-    n_all_imp  = len(day_records)
-    n_med_imp  = sum(1 for r in day_records if int(r.get("imp_final", 1) or 1) >= 2)
-    n_high_imp = sum(1 for r in day_records if int(r.get("imp_final", 1) or 1) >= 3)
-
-    # ── Fila 1: US / ARG ──────────────────────────────────────────────────────
-    with st.container(key="cal_row_mkt"):
-        st.markdown(_row_css("cal_row_mkt", 2, [active == "US", active == "ARG"], ORANGE),
-                    unsafe_allow_html=True)
-        c1, c2, c3 = st.columns([1, 1, 8])
-        with c1:
-            lbl = f"🇺🇸  US · {n_us}"
-            if st.button(lbl, key="cal_btn_us", use_container_width=True):
-                st.session_state["cal_market"] = "US"
-                st.rerun()
-        with c2:
-            lbl = f"🇦🇷  ARG · {n_arg}"
-            if st.button(lbl, key="cal_btn_arg", use_container_width=True):
-                st.session_state["cal_market"] = "ARG"
-                st.rerun()
-
-    # ── Fila 2: AYER / HOY / MAÑANA ────────────────────────────────────────────
-    with st.container(key="cal_row_day"):
-        st.markdown(
-            _row_css("cal_row_day", 3,
-                     [day_sel == "AYER", day_sel == "HOY", day_sel == "MAÑANA"], GOLD),
-            unsafe_allow_html=True
-        )
-        c1, c2, c3, c4 = st.columns([1, 1, 1, 7])
-        with c1:
-            if st.button(f"AYER · {n_yest}", key="cal_btn_yest", use_container_width=True):
-                st.session_state["cal_day"] = "AYER"
-                st.rerun()
-        with c2:
-            if st.button(f"HOY · {n_today}", key="cal_btn_today", use_container_width=True):
-                st.session_state["cal_day"] = "HOY"
-                st.rerun()
-        with c3:
-            if st.button(f"MAÑANA · {n_tom}", key="cal_btn_tom", use_container_width=True):
-                st.session_state["cal_day"] = "MAÑANA"
-                st.rerun()
+    n_all_imp   = len(day_records)
+    n_med_imp   = sum(1 for r in day_records if int(r.get("imp_final", 1) or 1) >= 2)
+    n_high_imp  = sum(1 for r in day_records if int(r.get("imp_final", 1) or 1) >= 3)
+    imp_counts  = {"TODOS": n_all_imp, "MED+": n_med_imp, "ALTA": n_high_imp}
+    imp_dots    = {"TODOS": "●○○", "MED+": "●●○", "ALTA": "●●●"}
+    imp_min     = {"TODOS": 1, "MED+": 2, "ALTA": 3}
 
     # ── Fila 3: filtro de importancia ──────────────────────────────────────────
-    with st.container(key="cal_row_imp"):
-        st.markdown(
-            _row_css("cal_row_imp", 3,
-                     [min_imp == 1, min_imp == 2, min_imp == 3], CYAN),
-            unsafe_allow_html=True
-        )
-        c1, c2, c3, c4 = st.columns([1, 1, 1, 7])
-        with c1:
-            if st.button(f"●○○ TODOS · {n_all_imp}", key="cal_btn_imp1", use_container_width=True):
-                st.session_state["cal_min_imp"] = 1
-                st.rerun()
-        with c2:
-            if st.button(f"●●○ MED+ · {n_med_imp}", key="cal_btn_imp2", use_container_width=True):
-                st.session_state["cal_min_imp"] = 2
-                st.rerun()
-        with c3:
-            if st.button(f"●●● ALTA · {n_high_imp}", key="cal_btn_imp3", use_container_width=True):
-                st.session_state["cal_min_imp"] = 3
-                st.rerun()
+    imp_sel_raw = st.segmented_control(
+        "Importancia",
+        options=["TODOS", "MED+", "ALTA"],
+        format_func=lambda v: f"{imp_dots[v]} {v} · {imp_counts[v]}",
+        default="TODOS",
+        key="cal_imp",
+        label_visibility="collapsed",
+    )
+    imp_sel = imp_sel_raw or st.session_state.get("_cal_imp_last", "TODOS")
+    st.session_state["_cal_imp_last"] = imp_sel
+    min_imp = imp_min[imp_sel]
 
     # ── Filtrar y renderizar ────────────────────────────────────────────────────
     filtered = [r for r in day_records if int(r.get("imp_final", 1) or 1) >= min_imp]
