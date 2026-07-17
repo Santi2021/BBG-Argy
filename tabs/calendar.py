@@ -254,13 +254,50 @@ def _render_calendar_html(records: list, market: str) -> str:
 
 _SEGCTL_CSS = """
 <style>
-  div[data-testid="stSegmentedControl"] {
+  /* Caption chica arriba de cada grupo de pills — así se distinguen entre sí */
+  div[data-testid="stButtonGroup"] label[data-testid="stWidgetLabel"] p {
     font-family: 'Courier New', monospace !important;
+    font-size: 9px !important;
+    color: #555 !important;
+    letter-spacing: 2px !important;
+    text-transform: uppercase !important;
+    margin-bottom: 3px !important;
   }
-  div[data-testid="stSegmentedControl"] label p {
+  div[data-testid="stButtonGroup"] div[role="radiogroup"] {
+    gap: 3px !important;
+  }
+  /* Pill base — oscura, no blanca */
+  div[data-testid="stButtonGroup"] button[data-variant="segmented_control"] {
+    background: #050505 !important;
+    color: #777 !important;
+    border: 1px solid #262626 !important;
+    border-radius: 4px !important;
     font-family: 'Courier New', monospace !important;
     font-size: 11px !important;
-    letter-spacing: 1px !important;
+    letter-spacing: 0.5px !important;
+    padding: 2px 10px !important;
+    min-height: 26px !important;
+    box-shadow: none !important;
+  }
+  div[data-testid="stButtonGroup"] button[data-variant="segmented_control"]:hover {
+    border-color: #555 !important;
+    color: #ccc !important;
+  }
+  /* Cada grupo tiene su propio color de acento cuando está seleccionada */
+  div[role="radiogroup"][aria-label="MERCADO"] button[data-selected="true"] {
+    background: #1a0900 !important;
+    color: #ff6600 !important;
+    border-color: #ff6600 !important;
+  }
+  div[role="radiogroup"][aria-label="DÍA"] button[data-selected="true"] {
+    background: #1a1500 !important;
+    color: #ffcc00 !important;
+    border-color: #ffcc00 !important;
+  }
+  div[role="radiogroup"][aria-label="IMPORTANCIA"] button[data-selected="true"] {
+    background: #001a1f !important;
+    color: #00d4ff !important;
+    border-color: #00d4ff !important;
   }
 </style>
 """
@@ -286,15 +323,18 @@ def render():
 
     n_us, n_arg = len(us_records), len(arg_records)
 
-    # ── Fila 1: US / ARG ──────────────────────────────────────────────────────
-    market_sel = st.segmented_control(
-        "Mercado",
-        options=["US", "ARG"],
-        format_func=lambda v: f"🇺🇸 US · {n_us}" if v == "US" else f"🇦🇷 ARG · {n_arg}",
-        default="US",
-        key="cal_market",
-        label_visibility="collapsed",
-    )
+    # ── Las 3 botoneras en una sola línea, cada una con su caption ──────────────
+    col_mkt, col_day, col_imp, col_spacer = st.columns([1.3, 2.1, 2.1, 4.5])
+
+    with col_mkt:
+        market_sel = st.segmented_control(
+            "MERCADO",
+            options=["US", "ARG"],
+            format_func=lambda v: f"🇺🇸 US · {n_us}" if v == "US" else f"🇦🇷 ARG · {n_arg}",
+            default="US",
+            key="cal_market",
+            label_visibility="visible",
+        )
     active = market_sel or st.session_state.get("_cal_market_last", "US")
     st.session_state["_cal_market_last"] = active
 
@@ -308,15 +348,15 @@ def render():
     n_tom   = sum(1 for r in records_all if r.get("date") == tom_str)
     day_counts = {"AYER": n_yest, "HOY": n_today, "MAÑANA": n_tom}
 
-    # ── Fila 2: AYER / HOY / MAÑANA ────────────────────────────────────────────
-    day_sel_raw = st.segmented_control(
-        "Día",
-        options=["AYER", "HOY", "MAÑANA"],
-        format_func=lambda v: f"{v} · {day_counts[v]}",
-        default="HOY",
-        key="cal_day",
-        label_visibility="collapsed",
-    )
+    with col_day:
+        day_sel_raw = st.segmented_control(
+            "DÍA",
+            options=["AYER", "HOY", "MAÑANA"],
+            format_func=lambda v: f"{v} · {day_counts[v]}",
+            default="HOY",
+            key="cal_day",
+            label_visibility="visible",
+        )
     day_sel = day_sel_raw or st.session_state.get("_cal_day_last", "HOY")
     st.session_state["_cal_day_last"] = day_sel
 
@@ -329,15 +369,15 @@ def render():
     imp_dots    = {"TODOS": "●○○", "MED+": "●●○", "ALTA": "●●●"}
     imp_min     = {"TODOS": 1, "MED+": 2, "ALTA": 3}
 
-    # ── Fila 3: filtro de importancia ──────────────────────────────────────────
-    imp_sel_raw = st.segmented_control(
-        "Importancia",
-        options=["TODOS", "MED+", "ALTA"],
-        format_func=lambda v: f"{imp_dots[v]} {v} · {imp_counts[v]}",
-        default="TODOS",
-        key="cal_imp",
-        label_visibility="collapsed",
-    )
+    with col_imp:
+        imp_sel_raw = st.segmented_control(
+            "IMPORTANCIA",
+            options=["TODOS", "MED+", "ALTA"],
+            format_func=lambda v: f"{imp_dots[v]} {v} · {imp_counts[v]}",
+            default="TODOS",
+            key="cal_imp",
+            label_visibility="visible",
+        )
     imp_sel = imp_sel_raw or st.session_state.get("_cal_imp_last", "TODOS")
     st.session_state["_cal_imp_last"] = imp_sel
     min_imp = imp_min[imp_sel]
