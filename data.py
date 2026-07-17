@@ -1428,3 +1428,154 @@ def get_economic_calendar(market: str = "US"):
                 break
 
     return {"error": last_error}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  FINVIZ SCREENER — motor propio (Overview + Valuation + Financial merged)
+#  Universo: NASDAQ + NYSE, market cap >= $10B (f=cap_largeover).
+#  Todo confirmado en vivo en Colab antes de escribir esto:
+#   - Sin headers: 403. Con un User-Agent normal: 200 (nada de Cloudflare
+#     pesado acá, muy distinto al caso Investing.com).
+#   - Vistas reales (sacadas de la navegación real de la página, no
+#     adivinadas): Overview=111, Valuation=121, Financial=161.
+#   - La tabla real tiene class="screener_table"; el ticker hay que sacarlo
+#     del texto del <a>, no de toda la celda (la celda trae un ícono pegado
+#     que duplica caracteres si tomás el texto completo).
+#   - Paginación: 20 filas por página, r=1,21,41,... El total real sale del
+#     texto "#1/N Total" en el HTML.
+#   - Export a CSV (export.ashx / api/v1/screener-export-csv) es Elite-only
+#     — da 200 pero devuelve una página HTML, no CSV real. Camino descartado.
+#   - Finviz NO soporta OR de exchanges en un mismo filtro: "exch_nasd,
+#     exch_nyse" juntos solo aplica el último (confirmado: da el mismo total
+#     que NYSE solo). Por eso se hacen 2 pasadas separadas y se combinan acá.
+#
+#  Filtros finos (P/E, dividend yield, sector, etc.) NO se piden a Finviz —
+#  se bajan los datos crudos y se filtran del lado nuestro con pandas. Así
+#  evitamos tener que mapear ~50 categorías de filtros de Finviz con sus
+#  códigos y buckets propios; alcanza con las columnas que ya trae cada vista.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_FINVIZ_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                  "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://finviz.com/",
+}
+
+_FINVIZ_VIEWS = {"overview": 111, "valuation": 121, "financial": 161}
+
+
+def _finviz_fetch_raw(view_code, filter_str, r_offset=1):
+    params = {"v": view_code, "f": filter_str}
+    if r_offset > 1:
+        params["r"] = r_offset
+    try:
+        resp = requests.get(
+            "https://finviz.com/screener.ashx",
+            params=params, headers=_FINVIZ_HEADERS, timeout=15,
+        )
+        return resp.status_code, resp.text
+    except Exception:
+        return 0, ""
+
+
+def _finviz_parse_page(html):
+    """Devuelve (list[dict] de filas, total_count o None) de una página."""
+    soup = BeautifulSoup(html, "html.parser")
+
+    total = None
+    m = re.search(r"#1\s*/\s*(\d+)\s*Total", html)
+    if m:
+        total = int(m.group(1))
+
+    table = soup.find("table", class_="screener_table")
+    if not table:
+        return [], total
+
+    trs = table.find_all("tr")
+    if not trs:
+        return [], total
+
+    headers = [c.get_text(strip=True) for c in trs[0].find_all(["th", "td"])]
+
+    rows = []
+    for tr in trs[1:]:
+        cells = tr.find_all(["th", "td"])
+        if len(cells) != len(headers):
+            continue
+        row = {}
+        for h, c in zip(headers, cells):
+            a = c.find("a")
+            row[h] = a.get_text(strip=True) if a else c.get_text(strip=True)
+        if row.get("Ticker"):
+            rows.append(row)
+    return rows, total
+
+
+def _finviz_fetch_view_all(view_code, filter_str, max_pages=60):
+    """Pagina TODAS las páginas de una vista+filtro. Devuelve list[dict]."""
+    all_rows = []
+    status, html = _finviz_fetch_raw(view_code, filter_str, r_offset=1)
+    if status != 200:
+        return all_rows
+
+    rows, total = _finviz_parse_page(html)
+    all_rows.extend(rows)
+    if not total:
+        return all_rows
+
+    n_pages = min(max_pages, (total + 19) // 20)
+    for page in range(2, n_pages + 1):
+        r_offset = 1 + (page - 1) * 20
+        _time.sleep(0.2)  # no martillar el servidor de Finviz
+        status, html = _finviz_fetch_raw(view_code, filter_str, r_offset=r_offset)
+        if status != 200:
+            continue
+        rows, _ = _finviz_parse_page(html)
+        all_rows.extend(rows)
+    return all_rows
+
+
+def _finviz_merge_views(base_filter):
+    """Trae Overview+Valuation+Financial para un filtro y las mezcla por Ticker."""
+    ov = _finviz_fetch_view_all(_FINVIZ_VIEWS["overview"],  base_filter)
+    va = _finviz_fetch_view_all(_FINVIZ_VIEWS["valuation"], base_filter)
+    fi = _finviz_fetch_view_all(_FINVIZ_VIEWS["financial"], base_filter)
+
+    df_ov = pd.DataFrame(ov)
+    if df_ov.empty:
+        return pd.DataFrame()
+
+    df_va = pd.DataFrame(va)
+    df_fi = pd.DataFrame(fi)
+
+    # No duplicar columnas que ya vienen de Overview (Market Cap/Price/etc.)
+    dup_cols = {"No.", "Market Cap", "Price", "Change", "Volume"}
+    merged = df_ov
+    if not df_va.empty:
+        va_cols = [c for c in df_va.columns if c == "Ticker" or c not in dup_cols]
+        merged = merged.merge(df_va[va_cols], on="Ticker", how="left")
+    if not df_fi.empty:
+        fi_cols = [c for c in df_fi.columns if c == "Ticker" or c not in dup_cols]
+        merged = merged.merge(df_fi[fi_cols], on="Ticker", how="left")
+
+    return merged
+
+
+@st.cache_data(ttl=21600, show_spinner=False)  # 6hs — fundamentals no cambian intradía
+def get_finviz_screener(min_cap_filter="cap_largeover"):
+    """
+    Screener propio sobre NASDAQ+NYSE con piso de market cap.
+    Devuelve pandas.DataFrame o {"error": str}.
+    """
+    try:
+        df_nasd = _finviz_merge_views(f"{min_cap_filter},exch_nasd")
+        df_nyse = _finviz_merge_views(f"{min_cap_filter},exch_nyse")
+        combined = pd.concat([df_nasd, df_nyse], ignore_index=True)
+        if combined.empty:
+            return {"error": "Sin datos"}
+        combined = combined.drop_duplicates(subset=["Ticker"]).reset_index(drop=True)
+        return combined
+    except Exception as e:
+        return {"error": str(e)}
