@@ -1,9 +1,16 @@
 """
 tabs/calendar.py — Economic Calendar
-Investing.com scraper · US + ARG · BBG estilo
+Investing.com · US + ARG · BBG estilo
 """
 
 import streamlit as st
+from datetime import datetime, timedelta
+
+try:
+    from zoneinfo import ZoneInfo
+    _ART = ZoneInfo("America/Argentina/Buenos_Aires")
+except Exception:
+    _ART = None
 
 # ── Paleta (heredada del CSS global de app.py) ─────────────────────────────────
 ORANGE = "#ff6600"
@@ -42,27 +49,43 @@ CAT_COLORS_ARG = {
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  RENDERER
+#  Hora Argentina — "hoy" consistente sin importar el huso horario del server
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _art_now() -> datetime:
+    if _ART is not None:
+        return datetime.now(_ART).replace(tzinfo=None)
+    return datetime.utcnow() - timedelta(hours=3)
+
+
+def _art_date_str(offset_days: int = 0) -> str:
+    return (_art_now() + timedelta(days=offset_days)).strftime("%Y-%m-%d")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  RENDERER — recibe los eventos de UN solo día ya filtrado
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _render_calendar_html(records: list, market: str) -> str:
     import re, pandas as pd
 
     if not records:
-        return f'<p style="color:{MUTED};font-family:\'Courier New\',monospace;padding:20px;font-size:12px">Sin eventos para esta ventana (ayer / hoy / mañana).</p>'
+        return f'<p style="color:{MUTED};font-family:\'Courier New\',monospace;padding:20px;font-size:12px">Sin eventos para este día.</p>'
 
     T          = "font-family:'Courier New',monospace;"
     cat_colors = CAT_COLORS_US if market == "US" else CAT_COLORS_ARG
     mkt_label  = "🇺🇸  US ECONOMIC CALENDAR" if market == "US" else "🇦🇷  ARGENTINA ECONOMIC CALENDAR"
 
-    # Rango de fechas para el sub-header
     dates = sorted(set(r.get("date", "") for r in records if r.get("date")))
     date_range = ""
     if dates:
         try:
-            d0 = pd.Timestamp(dates[0]).strftime("%d %b")
-            d1 = pd.Timestamp(dates[-1]).strftime("%d %b %Y")
-            date_range = f"{d0} – {d1}"
+            if len(dates) == 1:
+                date_range = pd.Timestamp(dates[0]).strftime("%d %b %Y").upper()
+            else:
+                d0 = pd.Timestamp(dates[0]).strftime("%d %b")
+                d1 = pd.Timestamp(dates[-1]).strftime("%d %b %Y")
+                date_range = f"{d0} – {d1}".upper()
         except Exception:
             pass
 
@@ -78,17 +101,17 @@ def _render_calendar_html(records: list, market: str) -> str:
         "border-right:1px solid #0a0a0a;"
         "vertical-align:middle;white-space:nowrap;"
     )
-    headers = ["HORA ET", "IMP", "CAT", "EVENTO", "PERÍODO", "FORECAST", "PREVIO"]
+    headers = ["HORA ARG", "IMP", "CAT", "EVENTO", "PERÍODO", "FORECAST", "ACTUAL", "PREVIO"]
 
     css = f"""
     <style>
       .eco-wrap    {{ background:{BG}; padding:8px 4px; }}
       .eco-hdr     {{ color:{ORANGE}; font-size:12px; font-weight:bold; letter-spacing:3px;
                      text-transform:uppercase; border-bottom:2px solid {ORANGE};
-                     padding-bottom:6px; margin-bottom:16px; {T}
+                     padding-bottom:6px; margin-bottom:14px; {T}
                      display:flex; justify-content:space-between; align-items:flex-end; }}
       .eco-range   {{ color:#999; font-size:11px; letter-spacing:1px; }}
-      .eco-day-blk {{ margin-bottom:20px; }}
+      .eco-day-blk {{ margin-bottom:12px; }}
       .eco-day-hdr {{ color:{GOLD}; font-size:11px; font-weight:bold; letter-spacing:2px;
                      text-transform:uppercase; border-bottom:1px solid #222;
                      padding:8px 0 4px 0; margin-bottom:0; {T}
@@ -113,16 +136,18 @@ def _render_calendar_html(records: list, market: str) -> str:
         f'</div>'
     )
 
-    # Agrupar por fecha
     from collections import defaultdict
     by_date = defaultdict(list)
     for r in records:
         by_date[r.get("date", "")].append(r)
 
+    today_str = _art_date_str(0)
+    yest_str  = _art_date_str(-1)
+    tom_str   = _art_date_str(1)
+
     for date in sorted(by_date.keys()):
         day_records = by_date[date]
 
-        # Ordenar: hora ASC, importancia DESC
         def sort_key(r):
             t = r.get("time_et", "00:00") or "00:00"
             t = t.replace("All Day", "00:00")
@@ -133,15 +158,13 @@ def _render_calendar_html(records: list, market: str) -> str:
                 return (0, 0)
         day_records = sorted(day_records, key=sort_key)
 
-        # Header del día
         try:
-            dt        = pd.Timestamp(date)
-            today_ts  = pd.Timestamp.today().normalize()
-            if dt.normalize() == today_ts:
+            dt = pd.Timestamp(date)
+            if date == today_str:
                 day_tag = "HOY"
-            elif dt.normalize() == today_ts - pd.Timedelta(days=1):
+            elif date == yest_str:
                 day_tag = "AYER"
-            elif dt.normalize() == today_ts + pd.Timedelta(days=1):
+            elif date == tom_str:
                 day_tag = "MAÑANA"
             else:
                 day_tag = ""
@@ -182,7 +205,6 @@ def _render_calendar_html(records: list, market: str) -> str:
             previous   = rec.get("previous", "") or "—"
             actual     = rec.get("actual", "") or ""
 
-            # Celda forecast/actual
             if actual and actual not in ("", "—", " "):
                 try:
                     a_n = float(re.sub(r"[^\d.\-]", "", actual))
@@ -190,9 +212,9 @@ def _render_calendar_html(records: list, market: str) -> str:
                     act_color = GREEN if a_n >= f_n else RED
                 except Exception:
                     act_color = GOLD
-                fc_cell = f'<span style="color:{act_color};font-weight:bold">{actual} ✓</span>'
+                actual_cell = f'<span style="color:{act_color};font-weight:bold">{actual} ✓</span>'
             else:
-                fc_cell = f'<span style="color:{MUTED}">{forecast}</span>'
+                actual_cell = f'<span style="color:{MUTED}">—</span>'
 
             html += f'<tr class="{row_cls}">'
             html += f'<td style="{TD_BASE}color:#999;font-size:11px">{time_et}</td>'
@@ -200,13 +222,13 @@ def _render_calendar_html(records: list, market: str) -> str:
             html += f'<td style="{TD_BASE}color:{cat_color};font-size:10px;font-weight:bold;letter-spacing:1px">{cat_short}</td>'
             html += f'<td style="{TD_BASE}color:{TEXT};max-width:360px;overflow:hidden;text-overflow:ellipsis">{event_name}</td>'
             html += f'<td style="{TD_BASE}color:{CYAN};font-size:11px">{period}</td>'
-            html += f'<td style="{TD_BASE}text-align:right">{fc_cell}</td>'
+            html += f'<td style="{TD_BASE}color:#999;text-align:right">{forecast}</td>'
+            html += f'<td style="{TD_BASE}text-align:right">{actual_cell}</td>'
             html += f'<td style="{TD_BASE}color:#999;text-align:right">{previous}</td>'
             html += "</tr>"
 
         html += "</tbody></table></div>"
 
-    # Leyenda
     cats_seen = list(dict.fromkeys(r.get("category", "OTHER") for r in records))
     legend    = ""
     for cat in cats_seen:
@@ -227,18 +249,59 @@ def _render_calendar_html(records: list, market: str) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+#  Botoneras — CSS scopeado por container(key=...) en vez de nth-child
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _toggle_btn_css(is_active, accent):
+    bg = "#0a0000" if is_active else "#000"
+    color = accent if is_active else "#777"
+    bb = f"2px solid {accent}" if is_active else "2px solid transparent"
+    return (
+        f"background:{bg} !important;"
+        f"color:{color} !important;"
+        f"border-left:none !important;"
+        f"border-right:1px solid #1a1a1a !important;"
+        f"border-top:none !important;"
+        f"border-bottom:{bb} !important;"
+        f"border-radius:0 !important;"
+        f"font-family:'Courier New',monospace !important;"
+        f"font-size:10px !important;"
+        f"font-weight:bold !important;"
+        f"letter-spacing:1.5px !important;"
+        f"padding:0 12px !important;"
+        f"height:28px !important;"
+        f"width:100% !important;"
+    )
+
+
+def _row_css(container_key, n_cols, is_active_list, accent):
+    rules = ""
+    for i in range(1, n_cols + 1):
+        rules += (
+            f'.st-key-{container_key} div[data-testid="column"]:nth-child({i}) .stButton > button {{'
+            f'{_toggle_btn_css(is_active_list[i-1], accent)}'
+            f'}}\n'
+        )
+    rules += (
+        f'.st-key-{container_key} .stButton > button:hover {{ opacity:0.85 !important; }}\n'
+    )
+    return f"<style>{rules}</style>"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 #  RENDER PRINCIPAL
-#  Toggle via st.session_state — JS no ejecuta dentro de st.markdown en Streamlit
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def render():
-    from data import get_economic_calendar  # lazy — evita error si data.py viejo
+    from data import get_economic_calendar
 
-    # ── Estado del toggle ─────────────────────────────────────────────────────
     if "cal_market" not in st.session_state:
         st.session_state["cal_market"] = "US"
+    if "cal_day" not in st.session_state:
+        st.session_state["cal_day"] = "HOY"
+    if "cal_min_imp" not in st.session_state:
+        st.session_state["cal_min_imp"] = 1
 
-    # ── Cargar datos ──────────────────────────────────────────────────────────
     with st.spinner("Cargando calendario económico..."):
         us_data  = get_economic_calendar("US")
         arg_data = get_economic_calendar("ARG")
@@ -248,75 +311,87 @@ def render():
     us_records  = us_data  if isinstance(us_data,  list) else []
     arg_records = arg_data if isinstance(arg_data, list) else []
 
-    # ── Toggle bar ────────────────────────────────────────────────────────────
     active  = st.session_state["cal_market"]
-    n_us    = len(us_records)
-    n_arg   = len(arg_records)
+    day_sel = st.session_state["cal_day"]
+    min_imp = st.session_state["cal_min_imp"]
 
-    # CSS que sobreescribe el estilo global de botones solo para esta toggle bar
-    us_active  = active == "US"
-    arg_active = active == "ARG"
+    n_us, n_arg = len(us_records), len(arg_records)
+    records_all = us_records if active == "US" else arg_records
 
-    def _btn_css(is_active):
-        bg    = "#0a0000" if is_active else "#000"
-        color = ORANGE    if is_active else "#777"
-        bb    = f"2px solid {ORANGE}" if is_active else "2px solid transparent"
-        return (
-            f"background:{bg} !important;"
-            f"color:{color} !important;"
-            f"border-left:none !important;"
-            f"border-right:1px solid #1a1a1a !important;"
-            f"border-top:none !important;"
-            f"border-bottom:{bb} !important;"
-            f"border-radius:0 !important;"
-            f"font-family:'Courier New',monospace !important;"
-            f"font-size:11px !important;"
-            f"font-weight:bold !important;"
-            f"letter-spacing:2px !important;"
-            f"padding:0 18px !important;"
-            f"height:34px !important;"
-            f"width:100% !important;"
+    yest_str, today_str, tom_str = _art_date_str(-1), _art_date_str(0), _art_date_str(1)
+    day_dates = {"AYER": yest_str, "HOY": today_str, "MAÑANA": tom_str}
+
+    n_yest = sum(1 for r in records_all if r.get("date") == yest_str)
+    n_today = sum(1 for r in records_all if r.get("date") == today_str)
+    n_tom  = sum(1 for r in records_all if r.get("date") == tom_str)
+
+    day_target  = day_dates[day_sel]
+    day_records = [r for r in records_all if r.get("date") == day_target]
+    n_all_imp  = len(day_records)
+    n_med_imp  = sum(1 for r in day_records if int(r.get("imp_final", 1) or 1) >= 2)
+    n_high_imp = sum(1 for r in day_records if int(r.get("imp_final", 1) or 1) >= 3)
+
+    # ── Fila 1: US / ARG ──────────────────────────────────────────────────────
+    with st.container(key="cal_row_mkt"):
+        st.markdown(_row_css("cal_row_mkt", 2, [active == "US", active == "ARG"], ORANGE),
+                    unsafe_allow_html=True)
+        c1, c2, c3 = st.columns([1, 1, 8])
+        with c1:
+            lbl = f"🇺🇸  US · {n_us}"
+            if st.button(lbl, key="cal_btn_us", use_container_width=True):
+                st.session_state["cal_market"] = "US"
+                st.rerun()
+        with c2:
+            lbl = f"🇦🇷  ARG · {n_arg}"
+            if st.button(lbl, key="cal_btn_arg", use_container_width=True):
+                st.session_state["cal_market"] = "ARG"
+                st.rerun()
+
+    # ── Fila 2: AYER / HOY / MAÑANA ────────────────────────────────────────────
+    with st.container(key="cal_row_day"):
+        st.markdown(
+            _row_css("cal_row_day", 3,
+                     [day_sel == "AYER", day_sel == "HOY", day_sel == "MAÑANA"], GOLD),
+            unsafe_allow_html=True
         )
+        c1, c2, c3, c4 = st.columns([1, 1, 1, 7])
+        with c1:
+            if st.button(f"AYER · {n_yest}", key="cal_btn_yest", use_container_width=True):
+                st.session_state["cal_day"] = "AYER"
+                st.rerun()
+        with c2:
+            if st.button(f"HOY · {n_today}", key="cal_btn_today", use_container_width=True):
+                st.session_state["cal_day"] = "HOY"
+                st.rerun()
+        with c3:
+            if st.button(f"MAÑANA · {n_tom}", key="cal_btn_tom", use_container_width=True):
+                st.session_state["cal_day"] = "MAÑANA"
+                st.rerun()
 
-    st.markdown(f"""
-    <style>
-      div[data-testid="column"]:nth-child(1) .stButton > button {{
-        {_btn_css(us_active)}
-      }}
-      div[data-testid="column"]:nth-child(2) .stButton > button {{
-        {_btn_css(arg_active)}
-      }}
-      div[data-testid="column"]:nth-child(1) .stButton > button:hover,
-      div[data-testid="column"]:nth-child(2) .stButton > button:hover {{
-        opacity: 0.85 !important;
-      }}
-    </style>
-    <div style="display:flex;align-items:center;background:#000;
-                border-bottom:1px solid #222;padding-left:4px;margin-bottom:2px;">
-      <span style="color:#555;font-size:10px;letter-spacing:2px;
-                   font-family:'Courier New',monospace;padding:0 12px 0 4px;
-                   border-right:1px solid #1a1a1a;margin-right:0;">
-        ECO CAL
-      </span>
-    </div>
-    """, unsafe_allow_html=True)
+    # ── Fila 3: filtro de importancia ──────────────────────────────────────────
+    with st.container(key="cal_row_imp"):
+        st.markdown(
+            _row_css("cal_row_imp", 3,
+                     [min_imp == 1, min_imp == 2, min_imp == 3], CYAN),
+            unsafe_allow_html=True
+        )
+        c1, c2, c3, c4 = st.columns([1, 1, 1, 7])
+        with c1:
+            if st.button(f"●○○ TODOS · {n_all_imp}", key="cal_btn_imp1", use_container_width=True):
+                st.session_state["cal_min_imp"] = 1
+                st.rerun()
+        with c2:
+            if st.button(f"●●○ MED+ · {n_med_imp}", key="cal_btn_imp2", use_container_width=True):
+                st.session_state["cal_min_imp"] = 2
+                st.rerun()
+        with c3:
+            if st.button(f"●●● ALTA · {n_high_imp}", key="cal_btn_imp3", use_container_width=True):
+                st.session_state["cal_min_imp"] = 3
+                st.rerun()
 
-    col_us, col_arg, col_rest = st.columns([1, 1, 10])
-    with col_us:
-        lbl_us = f"🇺🇸  US  · {n_us} EVT" if us_active else f"🇺🇸  US  · {n_us}"
-        if st.button(lbl_us, key="cal_btn_us", use_container_width=True):
-            st.session_state["cal_market"] = "US"
-            st.rerun()
-    with col_arg:
-        lbl_arg = f"🇦🇷  ARG  · {n_arg} EVT" if arg_active else f"🇦🇷  ARG  · {n_arg}"
-        if st.button(lbl_arg, key="cal_btn_arg", use_container_width=True):
-            st.session_state["cal_market"] = "ARG"
-            st.rerun()
-
-    # ── Renderizar el calendario activo ───────────────────────────────────────
-    records = us_records if active == "US" else arg_records
-    market  = active
-    st.markdown(_render_calendar_html(records, market), unsafe_allow_html=True)
+    # ── Filtrar y renderizar ────────────────────────────────────────────────────
+    filtered = [r for r in day_records if int(r.get("imp_final", 1) or 1) >= min_imp]
+    st.markdown(_render_calendar_html(filtered, active), unsafe_allow_html=True)
 
     # ── Errores no-fatales ────────────────────────────────────────────────────
     if us_err and active == "US":
@@ -333,23 +408,16 @@ def render():
         )
 
     # ── Footer ────────────────────────────────────────────────────────────────
+    try:
+        import pandas as pd
+        day_fmt = pd.Timestamp(day_target).strftime("%d %b %Y").upper()
+    except Exception:
+        day_fmt = day_target
     st.markdown(
         f'<div style="color:#888;font-size:10px;font-family:Courier New;'
         f'padding:8px 4px;border-top:1px solid #1a1a1a;margin-top:4px;">'
         f'FUENTE: INVESTING.COM · ACTUALIZACIÓN CADA 60 MIN · '
-        f'VENTANA: {_week_label()}'
+        f'VIENDO: {day_sel} · {day_fmt}'
         f'</div>',
         unsafe_allow_html=True
     )
-
-
-def _week_label() -> str:
-    """Ayer · Hoy · Mañana — ventana de 3 días que muestra el calendario."""
-    from datetime import datetime, timedelta
-    today     = datetime.today()
-    yesterday = today - timedelta(days=1)
-    tomorrow  = today + timedelta(days=1)
-    return (
-        f"AYER {yesterday.strftime('%d %b')} · HOY {today.strftime('%d %b')} · "
-        f"MAÑANA {tomorrow.strftime('%d %b %Y')}"
-    ).upper()
