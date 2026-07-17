@@ -744,43 +744,50 @@ def _sector_color_map(sectors: list) -> dict:
     return {s: _SECTOR_COLORS[i % len(_SECTOR_COLORS)] for i, s in enumerate(ordered)}
 
 
-_MIN_SECTOR_N = 3  # mínimo de empresas en un sector para calcularle una recta de tendencia
+_MIN_SECTOR_N = 6     # mínimo de empresas en un sector para calcularle una curva
+_TREND_MAX_BINS = 6   # cantidad máxima de franjas (bins) por sector
 
 
-def _sector_trend_lines(df: pd.DataFrame, x_col: str, y_col: str, x_range: tuple):
+def _sector_trend_curves(df: pd.DataFrame, x_col: str, y_col: str, x_range: tuple):
     """
-    Para cada sector con >= _MIN_SECTOR_N empresas, ajusta una recta de
-    regresión lineal (mínimos cuadrados) entre x_col e y_col. La recta se
-    dibuja SOLO dentro del rango real de datos de ESE sector (clippeado al
-    rango visible del gráfico) — extrapolarla a todo x_range (lo que se
-    probó primero) da pendientes absurdas para sectores cuyos datos reales
-    ocupan una franja angosta: con pocos puntos concentrados, extender la
-    recta lejos de ahí dispara el valor proyectado a cualquier cosa.
-    Devuelve (dict sector -> (x0, x1, y0, y1, n_empresas), list sectores excluidos).
+    Para cada sector con >= _MIN_SECTOR_N empresas: parte los datos del
+    sector en franjas (bins) por x_col con cantidad pareja de empresas cada
+    una, y calcula la MEDIANA de x e y dentro de cada franja. Conectando
+    esos puntos con una curva (spline) se obtiene una tendencia que sigue
+    la forma real de los datos y es robusta a outliers — a diferencia de
+    una regresión lineal de 2 puntos, un solo dato extremo (ej. una ROE de
+    miles de %) no puede arrastrar toda la curva porque queda aislado
+    dentro de su propia franja y la mediana de esa franja lo ignora.
+    Devuelve (dict sector -> (xs: list, ys: list, n_empresas), list sectores excluidos).
     """
-    lines = {}
+    curves = {}
     excluded = []
     disp_lo, disp_hi = x_range
     for sector, g in df.groupby("Sector"):
-        xs = g[x_col].to_numpy(dtype=float)
-        ys = g[y_col].to_numpy(dtype=float)
-        if len(xs) < _MIN_SECTOR_N:
+        gg = g[[x_col, y_col]].dropna()
+        if len(gg) < _MIN_SECTOR_N:
             excluded.append(sector)
             continue
+        n_bins = max(2, min(_TREND_MAX_BINS, len(gg) // 3))
         try:
-            slope, intercept = np.polyfit(xs, ys, 1)
+            gg = gg.copy()
+            gg["_bin"] = pd.qcut(gg[x_col], n_bins, duplicates="drop")
         except Exception:
             excluded.append(sector)
             continue
-        x0 = max(float(xs.min()), disp_lo)
-        x1 = min(float(xs.max()), disp_hi)
-        if x0 >= x1:
+        pts = (
+            gg.groupby("_bin", observed=True)
+              .agg(x=(x_col, "median"), y=(y_col, "median"))
+              .dropna()
+              .sort_values("x")
+        )
+        if len(pts) < 2:
             excluded.append(sector)
             continue
-        y0 = intercept + slope * x0
-        y1 = intercept + slope * x1
-        lines[sector] = (x0, x1, y0, y1, len(xs))
-    return lines, excluded
+        xs = pts["x"].clip(lower=disp_lo, upper=disp_hi).tolist()
+        ys = pts["y"].tolist()
+        curves[sector] = (xs, ys, len(gg))
+    return curves, excluded
 
 
 def _render_cuadrantes():
@@ -966,15 +973,15 @@ def _render_cuadrantes():
         unsafe_allow_html=True
     )
 
-    # ─── Chart 2: TENDENCIA POR SECTOR — una recta de regresión por sector,
-    # mismos ejes X/Y, para ver de un vistazo cómo se relacionan las dos
-    # métricas EN PROMEDIO dentro de cada sector (sin el ruido de 800+
-    # burbujas individuales encima).
+    # ─── Chart 2: TENDENCIA POR SECTOR — una curva por sector (medianas por
+    # franja de x_col, conectadas con spline), para ver de un vistazo cómo
+    # se relacionan las dos métricas dentro de cada sector sin el ruido de
+    # 800+ burbujas individuales encima, y sin que un outlier estire todo.
     _render_section_title("TENDENCIA POR SECTOR")
 
-    trend_lines, excluded_sectors = _sector_trend_lines(plot_df, x_col, y_col, (x_min, x_max))
+    trend_curves, excluded_sectors = _sector_trend_curves(plot_df, x_col, y_col, (x_min, x_max))
 
-    if not trend_lines:
+    if not trend_curves:
         st.markdown(
             '<p style="color:#555;font-family:Courier New;font-size:11px">'
             f'Ningún sector tiene al menos {_MIN_SECTOR_N} empresas en esta selección — '
@@ -983,14 +990,15 @@ def _render_cuadrantes():
         )
     else:
         fig2 = go.Figure()
-        for sector, (x0, x1, y0, y1, n) in sorted(trend_lines.items(), key=lambda kv: -kv[1][4]):
+        for sector, (xs, ys, n) in sorted(trend_curves.items(), key=lambda kv: -kv[1][2]):
             color = sec_colors.get(sector, "#888")
             fig2.add_trace(go.Scatter(
-                x=[x0, x1], y=[y0, y1],
-                mode="lines",
+                x=xs, y=ys,
+                mode="lines+markers",
+                line=dict(color=color, width=2.5, shape="spline", smoothing=0.7),
+                marker=dict(color=color, size=5),
                 name=f"{sector} (n={n})",
-                line=dict(color=color, width=2.5),
-                hovertemplate=f"<b>{sector}</b> · n={n}<br>{x_label}: %{{x:.1f}}{x_suffix}<br>{y_label}: %{{y:.1f}}{y_suffix}<extra></extra>",
+                hovertemplate=f"<b>{sector}</b> · n={n}<br>{x_label}: %{{x:.1f}}{x_suffix}<br>{y_label} (mediana): %{{y:.1f}}{y_suffix}<extra></extra>",
             ))
 
         fig2.update_layout(
@@ -1028,8 +1036,8 @@ def _render_cuadrantes():
         st.markdown(
             f'<div style="color:#555;font-size:9px;font-family:Courier New;'
             f'padding:6px 0;border-top:1px solid #1a1a1a;margin-top:6px">'
-            f'CADA RECTA = REGRESIÓN LINEAL DE {x_label.upper()} VS {y_label.upper()} DENTRO DE ESE SECTOR '
-            f'(n = cantidad de empresas){excl_note}'
+            f'CADA CURVA = MEDIANA DE {y_label.upper()} POR FRANJA DE {x_label.upper()} DENTRO DE ESE SECTOR '
+            f'(hasta {_TREND_MAX_BINS} franjas, robusto a outliers · n = cantidad de empresas){excl_note}'
             f'</div>',
             unsafe_allow_html=True
         )
