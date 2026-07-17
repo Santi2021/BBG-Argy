@@ -11,7 +11,7 @@ import requests
 import re
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from data import fmt_price, fmt_change, HEADERS, _get_closes, get_finviz_screener
+from data import fmt_price, fmt_change, HEADERS, _get_closes, get_finviz_screener, _finviz_cache_bucket
 
 TTL = 60
 
@@ -383,6 +383,42 @@ _SCREENER_FINANCIAL_COLS = ["Ticker","Company","Market Cap","Dividend","ROA","RO
                             "Curr R","Quick R","LTDebt/Eq","Debt/Eq","Gross M","Oper M",
                             "Profit M","Earnings","Price","Change"]
 
+# Filtros finos "estilo Finviz Fundamental tab" — todos calculados con pandas
+# sobre las columnas que ya bajamos (Overview+Valuation+Financial merged).
+# (columna_df, etiqueta, "max"/"min", step)
+_NUMERIC_FILTERS = [
+    ("P/E",         "P/E",               "max", 1.0),
+    ("Forward P/E", "Forward P/E",       "max", 1.0),
+    ("PEG",         "PEG",               "max", 0.1),
+    ("P/S",         "P/S",               "max", 0.5),
+    ("P/B",         "P/B",               "max", 0.5),
+    ("P/C",         "P/Cash",            "max", 1.0),
+    ("P/FCF",       "P/FCF",             "max", 1.0),
+    ("Dividend",    "Div. Yield %",      "min", 0.5),
+    ("ROA",         "ROA %",             "min", 1.0),
+    ("ROE",         "ROE %",             "min", 1.0),
+    ("ROIC",        "ROIC %",            "min", 1.0),
+    ("Curr R",      "Current Ratio",     "min", 0.1),
+    ("Quick R",     "Quick Ratio",       "min", 0.1),
+    ("LTDebt/Eq",   "LT Debt/Eq",        "max", 0.1),
+    ("Debt/Eq",     "Debt/Eq",           "max", 0.1),
+    ("Gross M",     "Gross Margin %",    "min", 1.0),
+    ("Oper M",      "Oper Margin %",     "min", 1.0),
+    ("Profit M",    "Profit Margin %",   "min", 1.0),
+    ("Change",      "Change hoy %",      "min", 0.5),
+]
+
+_SUBNAV_CSS = """
+<style>
+  div[role="radiogroup"][aria-label="SECCIÓN"] button[data-selected="true"],
+  div[role="radiogroup"][aria-label="VISTA"] button[data-selected="true"] {
+    background: #1a0900 !important;
+    color: #ff6600 !important;
+    border-color: #ff6600 !important;
+  }
+</style>
+"""
+
 
 def _parse_num(s):
     try:
@@ -392,27 +428,48 @@ def _parse_num(s):
 
 
 def _screener_filters(df: pd.DataFrame) -> pd.DataFrame:
-    sectors = sorted(df["Sector"].dropna().unique().tolist()) if "Sector" in df.columns else []
+    sectors    = sorted(df["Sector"].dropna().unique().tolist())   if "Sector" in df.columns else []
+    industries = sorted(df["Industry"].dropna().unique().tolist()) if "Industry" in df.columns else []
+    countries  = sorted(df["Country"].dropna().unique().tolist())  if "Country" in df.columns else []
 
-    c1, c2, c3, c4 = st.columns([2, 1.3, 1.3, 3.4])
+    c1, c2, c3 = st.columns([2, 2, 2])
     with c1:
         sel_sectors = st.multiselect("Sector", sectors, default=[], key="scr_sector")
     with c2:
-        pe_max = st.number_input("P/E máx.", min_value=0.0, value=0.0, step=1.0,
-                                  key="scr_pe_max", help="0 = sin límite")
+        sel_industries = st.multiselect("Industry", industries, default=[], key="scr_industry")
     with c3:
-        div_min = st.number_input("Div. Yield mín. %", min_value=0.0, value=0.0, step=0.5,
-                                   key="scr_div_min", help="0 = sin límite")
+        sel_countries = st.multiselect("Country", countries, default=[], key="scr_country")
 
     out = df.copy()
     if sel_sectors:
         out = out[out["Sector"].isin(sel_sectors)]
-    if pe_max > 0 and "P/E" in out.columns:
-        pe_num = out["P/E"].apply(_parse_num)
-        out = out[(pe_num.notna()) & (pe_num <= pe_max)]
-    if div_min > 0 and "Dividend" in out.columns:
-        div_num = out["Dividend"].apply(_parse_num)
-        out = out[(div_num.notna()) & (div_num >= div_min)]
+    if sel_industries:
+        out = out[out["Industry"].isin(sel_industries)]
+    if sel_countries:
+        out = out[out["Country"].isin(sel_countries)]
+
+    vals = {}
+    with st.expander("FILTROS FUNDAMENTALES (estilo Finviz) — 0 = sin límite", expanded=False):
+        row_cols = None
+        for i, (col, label, mode, step) in enumerate(_NUMERIC_FILTERS):
+            if i % 4 == 0:
+                row_cols = st.columns(4)
+            with row_cols[i % 4]:
+                suffix = "máx." if mode == "max" else "mín."
+                vals[col] = st.number_input(
+                    f"{label} {suffix}", value=0.0, step=step,
+                    key=f"scr_num_{col.replace('/', '_').replace(' ', '_')}",
+                )
+
+    for col, label, mode, step in _NUMERIC_FILTERS:
+        v = vals.get(col, 0.0)
+        if v == 0.0 or col not in out.columns:
+            continue
+        num = out[col].apply(_parse_num)
+        if mode == "max":
+            out = out[(num.notna()) & (num <= v)]
+        else:
+            out = out[(num.notna()) & (num >= v)]
 
     return out
 
@@ -428,8 +485,10 @@ def _render_dataframe(df: pd.DataFrame, cols: list):
 
 
 def _render_screener():
+    st.markdown(_SUBNAV_CSS, unsafe_allow_html=True)
+
     with st.spinner("Cargando screener (Finviz · NASDAQ+NYSE · Market Cap ≥ $10B)..."):
-        data = get_finviz_screener()
+        data = get_finviz_screener(_finviz_cache_bucket())
 
     if isinstance(data, dict) and "error" in data:
         st.markdown(
@@ -462,18 +521,29 @@ def _render_screener():
         unsafe_allow_html=True
     )
 
-    subsubtabs = st.tabs(["OVERVIEW", "VALUATION", "FINANCIAL"])
-    with subsubtabs[0]:
-        _render_dataframe(filtered, _SCREENER_OVERVIEW_COLS)
-    with subsubtabs[1]:
-        _render_dataframe(filtered, _SCREENER_VALUATION_COLS)
-    with subsubtabs[2]:
-        _render_dataframe(filtered, _SCREENER_FINANCIAL_COLS)
+    view_sel = st.segmented_control(
+        "VISTA",
+        options=["overview", "valuation", "financial"],
+        format_func=lambda v: {"overview": "OVERVIEW", "valuation": "VALUATION",
+                                "financial": "FINANCIAL"}[v],
+        default="overview",
+        key="scr_view",
+        label_visibility="collapsed",
+    )
+    view = view_sel or st.session_state.get("_scr_view_last", "overview")
+    st.session_state["_scr_view_last"] = view
+
+    cols_map = {
+        "overview": _SCREENER_OVERVIEW_COLS,
+        "valuation": _SCREENER_VALUATION_COLS,
+        "financial": _SCREENER_FINANCIAL_COLS,
+    }
+    _render_dataframe(filtered, cols_map[view])
 
     st.markdown(
         '<div style="color:#555;font-size:9px;font-family:Courier New;'
         'padding:6px 0;border-top:1px solid #1a1a1a;margin-top:6px">'
-        'FUENTE: FINVIZ.COM · ACTUALIZACIÓN CADA 6 HORAS · '
+        'FUENTE: FINVIZ.COM · ACTUALIZACIÓN CADA 1H (10-18HS) / CONGELADO FUERA DE HORARIO · '
         'UNIVERSO FIJO: NASDAQ+NYSE, MARKET CAP ≥ $10B'
         '</div>',
         unsafe_allow_html=True
@@ -481,12 +551,30 @@ def _render_screener():
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  RENDER PRINCIPAL — sub-tabs dentro de Mundo
+#  RENDER PRINCIPAL — sub-navegación dentro de Mundo
+#  NOTA: antes esto usaba st.tabs() anidado (Mundo > EQUITY/SCREENER > Screener >
+#  OVERVIEW/VALUATION/FINANCIAL = 3 niveles de tabs anidados dentro del tab bar
+#  principal de app.py). Eso causaba que el contenido de OTRAS pestañas
+#  (Calendar, Graficadora) apareciera renderizado y visible debajo del Screener
+#  en vez de quedar oculto — bug conocido de Streamlit con tabs anidados varios
+#  niveles. Se reemplaza por st.segmented_control() (mismo patrón ya probado y
+#  funcionando en Calendar), que no tiene ese problema.
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def render():
-    subtabs = st.tabs(["EQUITY GLOBAL", "SCREENER"])
-    with subtabs[0]:
+    st.markdown(_SUBNAV_CSS, unsafe_allow_html=True)
+    section_sel = st.segmented_control(
+        "SECCIÓN",
+        options=["equity", "screener"],
+        format_func=lambda v: "EQUITY GLOBAL" if v == "equity" else "SCREENER",
+        default="equity",
+        key="mundo_section",
+        label_visibility="collapsed",
+    )
+    section = section_sel or st.session_state.get("_mundo_section_last", "equity")
+    st.session_state["_mundo_section_last"] = section
+
+    if section == "equity":
         _render_equity_grid()
-    with subtabs[1]:
+    else:
         _render_screener()
