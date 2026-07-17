@@ -750,14 +750,17 @@ _MIN_SECTOR_N = 3  # mínimo de empresas en un sector para calcularle una recta 
 def _sector_trend_lines(df: pd.DataFrame, x_col: str, y_col: str, x_range: tuple):
     """
     Para cada sector con >= _MIN_SECTOR_N empresas, ajusta una recta de
-    regresión lineal (mínimos cuadrados) entre x_col e y_col y la extiende
-    a lo largo de todo x_range — así todas las rectas quedan comparables
-    en el mismo ancho de gráfico, sea cual sea el rango real de cada sector.
+    regresión lineal (mínimos cuadrados) entre x_col e y_col. La recta se
+    dibuja SOLO dentro del rango real de datos de ESE sector (clippeado al
+    rango visible del gráfico) — extrapolarla a todo x_range (lo que se
+    probó primero) da pendientes absurdas para sectores cuyos datos reales
+    ocupan una franja angosta: con pocos puntos concentrados, extender la
+    recta lejos de ahí dispara el valor proyectado a cualquier cosa.
     Devuelve (dict sector -> (x0, x1, y0, y1, n_empresas), list sectores excluidos).
     """
     lines = {}
     excluded = []
-    x_lo, x_hi = x_range
+    disp_lo, disp_hi = x_range
     for sector, g in df.groupby("Sector"):
         xs = g[x_col].to_numpy(dtype=float)
         ys = g[y_col].to_numpy(dtype=float)
@@ -769,9 +772,14 @@ def _sector_trend_lines(df: pd.DataFrame, x_col: str, y_col: str, x_range: tuple
         except Exception:
             excluded.append(sector)
             continue
-        y_lo = intercept + slope * x_lo
-        y_hi = intercept + slope * x_hi
-        lines[sector] = (x_lo, x_hi, y_lo, y_hi, len(xs))
+        x0 = max(float(xs.min()), disp_lo)
+        x1 = min(float(xs.max()), disp_hi)
+        if x0 >= x1:
+            excluded.append(sector)
+            continue
+        y0 = intercept + slope * x0
+        y1 = intercept + slope * x1
+        lines[sector] = (x0, x1, y0, y1, len(xs))
     return lines, excluded
 
 
