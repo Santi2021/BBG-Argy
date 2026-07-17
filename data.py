@@ -1579,14 +1579,25 @@ def _finviz_merge_views(base_filter):
     df_va = pd.DataFrame(va)
     df_fi = pd.DataFrame(fi)
 
-    # No duplicar columnas que ya vienen de Overview (Market Cap/Price/etc.)
-    dup_cols = {"No.", "Market Cap", "Price", "Change", "Volume"}
+    # No duplicar columnas que ya vienen de una vista anterior. FIX (bug
+    # encontrado por Santi: KeyError en "P/E" desde Cuadrantes/Comparador):
+    # antes esto usaba un set fijo `dup_cols = {"No.", "Market Cap", "Price",
+    # "Change", "Volume"}` que NO incluía "P/E" — pero Finviz repite "P/E"
+    # tanto en Overview como en Valuation. Al no estar en dup_cols, pandas
+    # .merge() renombraba la colisión a "P/E_x"/"P/E_y" en vez de dejar una
+    # columna limpia "P/E", y esa columna dejaba de existir para cualquier
+    # código que la buscara por nombre. El Screener no lo notaba porque sus
+    # propios filtros y el render de la tabla ya ignoraban en silencio
+    # cualquier columna ausente — pero Cuadrantes/Comparador no tenían ese
+    # guard y explotaban con KeyError. Ahora la dedup es dinámica: cualquier
+    # columna que ya esté en `merged` (venga de la vista que venga) se
+    # descarta de la vista siguiente en vez de intentar fusionarla de nuevo.
     merged = df_ov
     if not df_va.empty:
-        va_cols = [c for c in df_va.columns if c == "Ticker" or c not in dup_cols]
+        va_cols = [c for c in df_va.columns if c == "Ticker" or c not in merged.columns]
         merged = merged.merge(df_va[va_cols], on="Ticker", how="left")
     if not df_fi.empty:
-        fi_cols = [c for c in df_fi.columns if c == "Ticker" or c not in dup_cols]
+        fi_cols = [c for c in df_fi.columns if c == "Ticker" or c not in merged.columns]
         merged = merged.merge(df_fi[fi_cols], on="Ticker", how="left")
 
     return merged
