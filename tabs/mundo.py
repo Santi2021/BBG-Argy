@@ -9,6 +9,8 @@ import yfinance as yf
 import pandas as pd
 import requests
 import re
+import plotly.graph_objects as go
+import plotly.express as px
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from data import fmt_price, fmt_change, HEADERS, _get_closes, get_finviz_screener, _finviz_cache_bucket
@@ -475,6 +477,55 @@ def _column_config_for(cols: list) -> dict:
     return cfg
 
 
+# ─── Helpers compartidos entre Screener, Cuadrantes y Comparador ───────────────
+
+def _load_universe():
+    """Fetch + coerción numérica del universo del screener (945 empresas
+    NASDAQ+NYSE, market cap >= $10B). Devuelve (DataFrame, None) o (None, error_msg).
+    Reutilizado por las 3 sub-secciones que necesitan el mismo dataset base."""
+    data = get_finviz_screener(_finviz_cache_bucket())
+    if isinstance(data, dict) and "error" in data:
+        return None, data["error"]
+    if not isinstance(data, pd.DataFrame) or data.empty:
+        return None, "Sin datos del screener."
+    return _coerce_numeric(data), None
+
+
+def _render_section_title(text: str):
+    st.markdown(
+        f'<div style="color:#ff6600;font-size:11px;font-weight:bold;'
+        f'letter-spacing:2px;text-transform:uppercase;border-bottom:1px solid #333;'
+        f'padding-bottom:4px;margin-bottom:10px;font-family:\'Courier New\',monospace">'
+        f'{text}</div>',
+        unsafe_allow_html=True
+    )
+
+
+def _render_results_badge(shown: int, total: int, label: str = "RESULTADOS"):
+    pct = (shown / total * 100) if total else 0
+    st.markdown(
+        f'<div style="display:flex;align-items:center;gap:10px;background:#0a0a0a;'
+        f'border:1px solid #333;padding:6px 10px;margin:8px 0 10px 0;'
+        f'font-family:\'Courier New\',monospace">'
+        f'<div style="color:#ff6600;font-size:9px;font-weight:bold;letter-spacing:1px;'
+        f'text-transform:uppercase;white-space:nowrap">{label}</div>'
+        f'<div style="color:#ffcc00;font-size:17px;font-weight:bold;line-height:1">{shown}</div>'
+        f'<div style="color:#555;font-size:11px;white-space:nowrap">/ {total}</div>'
+        f'<div style="flex:1;height:5px;background:#1a1a1a;border-radius:2px;overflow:hidden">'
+        f'<div style="height:100%;width:{pct:.1f}%;background:#ff6600;border-radius:2px"></div>'
+        f'</div>'
+        f'<div style="color:#888;font-size:10px;white-space:nowrap">{pct:.0f}%</div>'
+        f'</div>',
+        unsafe_allow_html=True
+    )
+
+
+def _hex_alpha(hex_color: str, alpha: float) -> str:
+    h = hex_color.lstrip("#")
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    return f"rgba({r},{g},{b},{alpha})"
+
+
 _SUBNAV_CSS = """
 <style>
   div[role="radiogroup"][aria-label="SECCIÓN"] button[data-selected="true"],
@@ -584,56 +635,21 @@ def _render_screener():
     st.markdown(_SUBNAV_CSS, unsafe_allow_html=True)
 
     with st.spinner("Cargando screener (Finviz · NASDAQ+NYSE · Market Cap ≥ $10B)..."):
-        data = get_finviz_screener(_finviz_cache_bucket())
+        data, err = _load_universe()
 
-    if isinstance(data, dict) and "error" in data:
+    if err:
         st.markdown(
             f'<p style="color:#555;font-family:Courier New;font-size:11px">'
-            f'Screener error: {data["error"]}</p>',
-            unsafe_allow_html=True
-        )
-        return
-    if not isinstance(data, pd.DataFrame) or data.empty:
-        st.markdown(
-            '<p style="color:#555;font-family:Courier New;font-size:11px">'
-            'Sin datos del screener.</p>',
+            f'Screener error: {err}</p>',
             unsafe_allow_html=True
         )
         return
 
-    # Finviz trae todo como texto ("99.86B", "640,699", "0.26%") — convertir a
-    # numérico acá para que el sort por columna en la tabla (canvas/glide-data-grid)
-    # ordene por valor real y no alfabéticamente.
-    data = _coerce_numeric(data)
-
-    st.markdown(
-        '<div style="color:#ff6600;font-size:11px;font-weight:bold;'
-        'letter-spacing:2px;text-transform:uppercase;border-bottom:1px solid #333;'
-        'padding-bottom:4px;margin-bottom:10px;font-family:\'Courier New\',monospace">'
-        'SCREENER</div>',
-        unsafe_allow_html=True
-    )
+    _render_section_title("SCREENER")
 
     filtered = _screener_filters(data)
 
-    total = len(data)
-    shown = len(filtered)
-    pct = (shown / total * 100) if total else 0
-    st.markdown(
-        f'<div style="display:flex;align-items:center;gap:10px;background:#0a0a0a;'
-        f'border:1px solid #333;padding:6px 10px;margin:8px 0 10px 0;'
-        f'font-family:\'Courier New\',monospace">'
-        f'<div style="color:#ff6600;font-size:9px;font-weight:bold;letter-spacing:1px;'
-        f'text-transform:uppercase;white-space:nowrap">RESULTADOS</div>'
-        f'<div style="color:#ffcc00;font-size:17px;font-weight:bold;line-height:1">{shown}</div>'
-        f'<div style="color:#555;font-size:11px;white-space:nowrap">/ {total}</div>'
-        f'<div style="flex:1;height:5px;background:#1a1a1a;border-radius:2px;overflow:hidden">'
-        f'<div style="height:100%;width:{pct:.1f}%;background:#ff6600;border-radius:2px"></div>'
-        f'</div>'
-        f'<div style="color:#888;font-size:10px;white-space:nowrap">{pct:.0f}%</div>'
-        f'</div>',
-        unsafe_allow_html=True
-    )
+    _render_results_badge(len(filtered), len(data))
 
     view_sel = st.segmented_control(
         "VISTA",
@@ -665,6 +681,287 @@ def _render_screener():
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+#  TAB 3: CUADRANTES — scatter valuación/calidad/crecimiento sobre el universo
+#  del Screener. Bubble = Market Cap, color = Sector. Reutiliza _load_universe()
+#  para no volver a pegarle a Finviz (misma cache horaria del Screener).
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_QUADRANT_METRICS = [
+    ("P/E",              "P/E"),
+    ("Forward P/E",      "Forward P/E"),
+    ("PEG",              "PEG"),
+    ("P/S",              "P/S"),
+    ("P/B",              "P/B"),
+    ("P/FCF",            "P/FCF"),
+    ("Div. Yield %",     "Dividend"),
+    ("ROA %",            "ROA"),
+    ("ROE %",            "ROE"),
+    ("ROIC %",           "ROIC"),
+    ("Gross Margin %",   "Gross M"),
+    ("Oper Margin %",    "Oper M"),
+    ("Profit Margin %",  "Profit M"),
+    ("Debt/Eq",          "Debt/Eq"),
+    ("Change hoy %",     "Change"),
+    ("EPS Next 5Y %",    "EPS Next 5Y"),
+    ("Sales Past 5Y %",  "Sales Past 5Y"),
+]
+_QUADRANT_LABELS = [m[0] for m in _QUADRANT_METRICS]
+_QUADRANT_MAP = dict(_QUADRANT_METRICS)
+
+# Paleta de 12 colores por sector — misma familia de acentos que ya usa la
+# terminal (ticker de noticias en app.py), autocontenida acá para no acoplar
+# módulos.
+_SECTOR_COLORS = [
+    "#ff6600", "#00bfff", "#00ff41", "#ffcc00", "#ff3b3b", "#a855f7",
+    "#4ade80", "#60a5fa", "#f5a0a0", "#c084fc", "#ff8c42", "#2dd4bf",
+]
+
+
+def _render_cuadrantes():
+    st.markdown(_SUBNAV_CSS, unsafe_allow_html=True)
+
+    with st.spinner("Cargando universo (Finviz · NASDAQ+NYSE · Market Cap ≥ $10B)..."):
+        data, err = _load_universe()
+
+    if err:
+        st.markdown(
+            f'<p style="color:#555;font-family:Courier New;font-size:11px">'
+            f'Cuadrantes error: {err}</p>',
+            unsafe_allow_html=True
+        )
+        return
+
+    _render_section_title("CUADRANTES")
+
+    sectors = sorted(data["Sector"].dropna().unique().tolist()) if "Sector" in data.columns else []
+
+    c1, c2, c3 = st.columns([2, 2, 3])
+    with c1:
+        x_label = st.selectbox("Eje X", _QUADRANT_LABELS,
+                                index=_QUADRANT_LABELS.index("P/E"), key="quad_x")
+    with c2:
+        y_label = st.selectbox("Eje Y", _QUADRANT_LABELS,
+                                index=_QUADRANT_LABELS.index("ROE %"), key="quad_y")
+    with c3:
+        sel_sectors = st.multiselect("Sector", sectors, default=[], key="quad_sector")
+
+    x_col = _QUADRANT_MAP[x_label]
+    y_col = _QUADRANT_MAP[y_label]
+
+    plot_df = data.dropna(subset=[x_col, y_col, "Market Cap"]).copy()
+    if sel_sectors:
+        plot_df = plot_df[plot_df["Sector"].isin(sel_sectors)]
+
+    _render_results_badge(len(plot_df), len(data), label="EMPRESAS GRAFICADAS")
+
+    if plot_df.empty:
+        st.markdown(
+            '<p style="color:#555;font-family:Courier New;font-size:11px">'
+            'Sin datos para esta combinación de ejes/filtros.</p>',
+            unsafe_allow_html=True
+        )
+        return
+
+    x_suffix = "%" if x_col in _PCT_COLS else ""
+    y_suffix = "%" if y_col in _PCT_COLS else ""
+
+    fig = px.scatter(
+        plot_df, x=x_col, y=y_col,
+        size="Market Cap", color="Sector",
+        size_max=38,
+        color_discrete_sequence=_SECTOR_COLORS,
+        custom_data=["Ticker", "Company", "Market Cap"],
+    )
+    fig.update_traces(
+        marker=dict(line=dict(color="#000", width=0.6), opacity=0.85),
+        hovertemplate=(
+            "<b>%{customdata[0]}</b> · %{customdata[1]}<br>"
+            f"{x_label}: %{{x:.2f}}{x_suffix}<br>"
+            f"{y_label}: %{{y:.2f}}{y_suffix}<br>"
+            "Market Cap: %{customdata[2]:.1f} B<extra></extra>"
+        ),
+    )
+
+    x_med = plot_df[x_col].median()
+    y_med = plot_df[y_col].median()
+    fig.add_vline(x=x_med, line_dash="dash", line_color="#333", line_width=1)
+    fig.add_hline(y=y_med, line_dash="dash", line_color="#333", line_width=1)
+
+    fig.update_layout(
+        paper_bgcolor="#000", plot_bgcolor="#000",
+        font=dict(family="Courier New", size=9, color="#555"),
+        margin=dict(l=50, r=20, t=20, b=45),
+        height=620,
+        xaxis=dict(
+            title=dict(text=x_label.upper(), font=dict(size=9, color="#888")),
+            gridcolor="#111", linecolor="#333", zerolinecolor="#222",
+            tickfont=dict(size=9, color="#ccc", family="Courier New"),
+            ticksuffix=x_suffix,
+        ),
+        yaxis=dict(
+            title=dict(text=y_label.upper(), font=dict(size=9, color="#888")),
+            gridcolor="#111", linecolor="#333", zerolinecolor="#222",
+            tickfont=dict(size=9, color="#ccc", family="Courier New"),
+            ticksuffix=y_suffix,
+        ),
+        legend=dict(
+            bgcolor="rgba(0,0,0,0.7)", bordercolor="#333", borderwidth=1,
+            font=dict(size=9, color="#ccc", family="Courier New"),
+            orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0,
+        ),
+        hoverlabel=dict(
+            bgcolor="#111", bordercolor="#ff6600",
+            font=dict(family="Courier New", size=9, color="#fff"),
+        ),
+    )
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+    st.markdown(
+        '<div style="color:#555;font-size:9px;font-family:Courier New;'
+        'padding:6px 0;border-top:1px solid #1a1a1a;margin-top:6px">'
+        'TAMAÑO DE BURBUJA = MARKET CAP · COLOR = SECTOR · LÍNEAS PUNTEADAS = MEDIANA DE CADA EJE · '
+        'FUENTE: FINVIZ.COM · UNIVERSO: NASDAQ+NYSE, MARKET CAP ≥ $10B'
+        '</div>',
+        unsafe_allow_html=True
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  TAB 4: COMPARADOR — radar de 2 a 4 tickers, ejes en percentil dentro del
+#  universo completo del Screener (0 = peor del universo, 100 = mejor).
+#  Valuación y Deuda se invierten (menor valor real = mejor = percentil alto).
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_RADAR_METRICS = [
+    ("Valuación (P/E)",        "P/E",         True),
+    ("Crecimiento (EPS 5Y)",   "EPS Next 5Y", False),
+    ("Rentabilidad (ROE)",     "ROE",         False),
+    ("Márgenes (Profit M)",    "Profit M",    False),
+    ("Salud Fin. (Debt/Eq)",   "Debt/Eq",     True),
+    ("Dividendo (Yield)",      "Dividend",    False),
+]
+
+_RADAR_COLORS = ["#ff6600", "#00bfff", "#00ff41", "#ffcc00"]
+
+
+def _percentile_ranks(df: pd.DataFrame, col: str, invert: bool = False):
+    ranks = df[col].rank(pct=True, na_option="keep") * 100
+    return (100 - ranks) if invert else ranks
+
+
+def _render_comparador():
+    st.markdown(_SUBNAV_CSS, unsafe_allow_html=True)
+
+    with st.spinner("Cargando universo (Finviz · NASDAQ+NYSE · Market Cap ≥ $10B)..."):
+        data, err = _load_universe()
+
+    if err:
+        st.markdown(
+            f'<p style="color:#555;font-family:Courier New;font-size:11px">'
+            f'Comparador error: {err}</p>',
+            unsafe_allow_html=True
+        )
+        return
+
+    _render_section_title("COMPARADOR")
+
+    label_map = dict(zip(data["Ticker"], data["Company"]))
+    display_opts = [f"{t} — {label_map[t]}" for t in sorted(label_map.keys())]
+    rev_map = {f"{t} — {label_map[t]}": t for t in label_map}
+
+    sel_display = st.multiselect(
+        "Tickers a comparar (2 a 4)", display_opts, default=[],
+        max_selections=4, key="comp_tickers",
+    )
+    sel_tickers = [rev_map[d] for d in sel_display]
+
+    if len(sel_tickers) < 2:
+        st.markdown(
+            '<p style="color:#555;font-family:Courier New;font-size:11px">'
+            'Elegí al menos 2 tickers (hasta 4) para comparar.</p>',
+            unsafe_allow_html=True
+        )
+        return
+
+    pct_df = data[["Ticker"]].copy()
+    for _, col, invert in _RADAR_METRICS:
+        pct_df[col] = _percentile_ranks(data, col, invert)
+
+    axis_labels = [m[0] for m in _RADAR_METRICS]
+
+    fig = go.Figure()
+    for i, ticker in enumerate(sel_tickers):
+        row = pct_df[pct_df["Ticker"] == ticker]
+        if row.empty:
+            continue
+        values = [
+            float(row.iloc[0][col]) if pd.notna(row.iloc[0][col]) else 0.0
+            for _, col, _ in _RADAR_METRICS
+        ]
+        color = _RADAR_COLORS[i % len(_RADAR_COLORS)]
+        fig.add_trace(go.Scatterpolar(
+            r=values + values[:1],
+            theta=axis_labels + axis_labels[:1],
+            name=ticker,
+            fill="toself",
+            line=dict(color=color, width=2),
+            fillcolor=_hex_alpha(color, 0.12),
+            hovertemplate="<b>" + ticker + "</b><br>%{theta}: %{r:.0f}º percentil<extra></extra>",
+        ))
+
+    fig.update_layout(
+        paper_bgcolor="#000",
+        polar=dict(
+            bgcolor="#000",
+            radialaxis=dict(
+                visible=True, range=[0, 100],
+                gridcolor="#222", linecolor="#333",
+                tickfont=dict(size=8, color="#555", family="Courier New"),
+            ),
+            angularaxis=dict(
+                gridcolor="#222", linecolor="#333",
+                tickfont=dict(size=9, color="#ccc", family="Courier New"),
+            ),
+        ),
+        font=dict(family="Courier New", size=9, color="#555"),
+        showlegend=True,
+        legend=dict(
+            bgcolor="rgba(0,0,0,0.7)", bordercolor="#333", borderwidth=1,
+            font=dict(size=10, color="#ccc", family="Courier New"),
+            orientation="h", yanchor="bottom", y=-0.12, xanchor="center", x=0.5,
+        ),
+        margin=dict(l=60, r=60, t=30, b=30),
+        height=520,
+        hoverlabel=dict(
+            bgcolor="#111", bordercolor="#ff6600",
+            font=dict(family="Courier New", size=9, color="#fff"),
+        ),
+    )
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+    raw_cols = ["Ticker", "Company"] + [col for _, col, _ in _RADAR_METRICS] + ["Market Cap", "Price"]
+    comp_table = data[data["Ticker"].isin(sel_tickers)][raw_cols].copy()
+    comp_table = comp_table.set_index("Ticker").loc[sel_tickers].reset_index()
+    st.dataframe(
+        comp_table,
+        use_container_width=True,
+        hide_index=True,
+        column_config=_column_config_for(raw_cols),
+    )
+
+    st.markdown(
+        '<div style="color:#555;font-size:9px;font-family:Courier New;'
+        'padding:6px 0;border-top:1px solid #1a1a1a;margin-top:6px">'
+        'CADA EJE = PERCENTIL DENTRO DEL UNIVERSO (NASDAQ+NYSE, MARKET CAP ≥ $10B) · '
+        '100 = MEJOR DEL UNIVERSO EN ESA MÉTRICA · 0 = PEOR · '
+        'VALUACIÓN Y DEUDA INVERTIDAS (PERCENTIL ALTO = MÁS BARATO / MENOS APALANCADO) · '
+        'FUENTE: FINVIZ.COM'
+        '</div>',
+        unsafe_allow_html=True
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 #  RENDER PRINCIPAL — sub-navegación dentro de Mundo
 #  NOTA: antes esto usaba st.tabs() anidado (Mundo > EQUITY/SCREENER > Screener >
 #  OVERVIEW/VALUATION/FINANCIAL = 3 niveles de tabs anidados dentro del tab bar
@@ -675,12 +972,20 @@ def _render_screener():
 #  funcionando en Calendar), que no tiene ese problema.
 # ═══════════════════════════════════════════════════════════════════════════════
 
+_SECTION_LABELS = {
+    "equity": "EQUITY GLOBAL",
+    "screener": "SCREENER",
+    "cuadrantes": "CUADRANTES",
+    "comparador": "COMPARADOR",
+}
+
+
 def render():
     st.markdown(_SUBNAV_CSS, unsafe_allow_html=True)
     section_sel = st.segmented_control(
         "SECCIÓN",
-        options=["equity", "screener"],
-        format_func=lambda v: "EQUITY GLOBAL" if v == "equity" else "SCREENER",
+        options=["equity", "screener", "cuadrantes", "comparador"],
+        format_func=lambda v: _SECTION_LABELS[v],
         default="equity",
         key="mundo_section",
         label_visibility="collapsed",
@@ -690,5 +995,9 @@ def render():
 
     if section == "equity":
         _render_equity_grid()
-    else:
+    elif section == "screener":
         _render_screener()
+    elif section == "cuadrantes":
+        _render_cuadrantes()
+    else:
+        _render_comparador()
