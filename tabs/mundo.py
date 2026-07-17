@@ -11,7 +11,7 @@ import requests
 import re
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from data import fmt_price, fmt_change, HEADERS, _get_closes
+from data import fmt_price, fmt_change, HEADERS, _get_closes, get_finviz_screener
 
 TTL = 60
 
@@ -368,10 +368,125 @@ def _render_equity_grid():
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+#  TAB 2: SCREENER — motor propio (Finviz Overview+Valuation+Financial merged)
+#  Universo fijo: NASDAQ+NYSE, market cap >= $10B. Filtros finos (sector,
+#  P/E, dividend yield) se aplican acá con pandas sobre los datos ya bajados
+#  — no dependen de los códigos de filtro de Finviz.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_SCREENER_OVERVIEW_COLS  = ["Ticker","Company","Sector","Industry","Country",
+                            "Market Cap","Price","Change","Volume"]
+_SCREENER_VALUATION_COLS = ["Ticker","Company","Market Cap","P/E","Forward P/E","PEG",
+                            "P/S","P/B","P/C","P/FCF","EPS This Y","EPS Next Y",
+                            "EPS Past 5Y","EPS Next 5Y","Sales Past 5Y","Price","Change"]
+_SCREENER_FINANCIAL_COLS = ["Ticker","Company","Market Cap","Dividend","ROA","ROE","ROIC",
+                            "Curr R","Quick R","LTDebt/Eq","Debt/Eq","Gross M","Oper M",
+                            "Profit M","Earnings","Price","Change"]
+
+
+def _parse_num(s):
+    try:
+        return float(str(s).replace(",", "").replace("%", "").strip())
+    except (ValueError, TypeError):
+        return None
+
+
+def _screener_filters(df: pd.DataFrame) -> pd.DataFrame:
+    sectors = sorted(df["Sector"].dropna().unique().tolist()) if "Sector" in df.columns else []
+
+    c1, c2, c3, c4 = st.columns([2, 1.3, 1.3, 3.4])
+    with c1:
+        sel_sectors = st.multiselect("Sector", sectors, default=[], key="scr_sector")
+    with c2:
+        pe_max = st.number_input("P/E máx.", min_value=0.0, value=0.0, step=1.0,
+                                  key="scr_pe_max", help="0 = sin límite")
+    with c3:
+        div_min = st.number_input("Div. Yield mín. %", min_value=0.0, value=0.0, step=0.5,
+                                   key="scr_div_min", help="0 = sin límite")
+
+    out = df.copy()
+    if sel_sectors:
+        out = out[out["Sector"].isin(sel_sectors)]
+    if pe_max > 0 and "P/E" in out.columns:
+        pe_num = out["P/E"].apply(_parse_num)
+        out = out[(pe_num.notna()) & (pe_num <= pe_max)]
+    if div_min > 0 and "Dividend" in out.columns:
+        div_num = out["Dividend"].apply(_parse_num)
+        out = out[(div_num.notna()) & (div_num >= div_min)]
+
+    return out
+
+
+def _render_dataframe(df: pd.DataFrame, cols: list):
+    available = [c for c in cols if c in df.columns]
+    st.dataframe(
+        df[available],
+        use_container_width=True,
+        hide_index=True,
+        height=560,
+    )
+
+
+def _render_screener():
+    with st.spinner("Cargando screener (Finviz · NASDAQ+NYSE · Market Cap ≥ $10B)..."):
+        data = get_finviz_screener()
+
+    if isinstance(data, dict) and "error" in data:
+        st.markdown(
+            f'<p style="color:#555;font-family:Courier New;font-size:11px">'
+            f'Screener error: {data["error"]}</p>',
+            unsafe_allow_html=True
+        )
+        return
+    if not isinstance(data, pd.DataFrame) or data.empty:
+        st.markdown(
+            '<p style="color:#555;font-family:Courier New;font-size:11px">'
+            'Sin datos del screener.</p>',
+            unsafe_allow_html=True
+        )
+        return
+
+    st.markdown(
+        f'<div style="color:{"#ff6600"};font-size:11px;font-weight:bold;'
+        f'letter-spacing:2px;text-transform:uppercase;border-bottom:1px solid #333;'
+        f'padding-bottom:4px;margin-bottom:10px;font-family:\'Courier New\',monospace">'
+        f'SCREENER · NASDAQ+NYSE · MARKET CAP ≥ $10B · {len(data)} empresas</div>',
+        unsafe_allow_html=True
+    )
+
+    filtered = _screener_filters(data)
+
+    st.markdown(
+        f'<div style="color:#888;font-size:10px;font-family:Courier New;'
+        f'margin:6px 0 8px 0">MOSTRANDO {len(filtered)} DE {len(data)}</div>',
+        unsafe_allow_html=True
+    )
+
+    subsubtabs = st.tabs(["OVERVIEW", "VALUATION", "FINANCIAL"])
+    with subsubtabs[0]:
+        _render_dataframe(filtered, _SCREENER_OVERVIEW_COLS)
+    with subsubtabs[1]:
+        _render_dataframe(filtered, _SCREENER_VALUATION_COLS)
+    with subsubtabs[2]:
+        _render_dataframe(filtered, _SCREENER_FINANCIAL_COLS)
+
+    st.markdown(
+        '<div style="color:#555;font-size:9px;font-family:Courier New;'
+        'padding:6px 0;border-top:1px solid #1a1a1a;margin-top:6px">'
+        'FUENTE: FINVIZ.COM · ACTUALIZACIÓN CADA 6 HORAS · '
+        'UNIVERSO FIJO: NASDAQ+NYSE, MARKET CAP ≥ $10B'
+        '</div>',
+        unsafe_allow_html=True
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 #  RENDER PRINCIPAL — sub-tabs dentro de Mundo
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def render():
-    subtabs = st.tabs(["EQUITY GLOBAL"])
+    subtabs = st.tabs(["EQUITY GLOBAL", "SCREENER"])
     with subtabs[0]:
         _render_equity_grid()
+    with subtabs[1]:
+        _render_screener()
