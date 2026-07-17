@@ -114,11 +114,20 @@ div[data-testid="stAppViewBlockContainer"] { padding-top: 0 !important; }
     font-size: 10px !important; font-weight: bold !important;
     letter-spacing: 1px !important; text-transform: uppercase !important;
     color: #555 !important; background: transparent !important;
-    border: none !important; border-bottom: 2px solid transparent !important;
-    border-radius: 0 !important; padding: 3px 10px !important;
-    height: 26px !important; white-space: nowrap !important;
+    border: none !important;
+    border-top: 2px solid transparent !important;
+    border-bottom: 2px solid transparent !important;
+    border-radius: 0 !important; padding: 6px 12px !important;
+    height: 34px !important; white-space: nowrap !important;
+    box-sizing: border-box !important;
     cursor: pointer !important;
 }
+/* FIX (visto en vivo con DevTools): antes solo había border-bottom reservado
+   (2px) y NADA de border-top (0px) — con box-sizing:border-box eso hacía
+   que, aunque el texto se centrara por flex dentro de su caja, la caja en sí
+   quedara 2px más angosta del lado de abajo. Resultado: 3px de aire arriba
+   del texto contra 5px abajo, asimétrico. Reservando el mismo border-top
+   transparente que el border-bottom, queda parejo arriba y abajo. */
 [data-testid="stTab"]:hover { color: #fff !important; background: #0a0a0a !important; }
 [data-testid="stTab"][aria-selected="true"] {
     color: #ff6600 !important; border-bottom: 2px solid #ff6600 !important;
